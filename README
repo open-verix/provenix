@@ -1,0 +1,199 @@
+🛡️ Provenix
+
+The Policy-Driven Software Supply Chain Orchestrator
+
+Provenix is an intent-first security orchestrator that generates atomic, cryptographically bound evidence for software artifacts. It abstracts tools like Cosign, Syft, and Grype into a single, policy-centric workflow—without forcing users to learn or operate those tools directly.
+
+Provenix observes and records. It does not silently enforce.
+
+⸻
+
+Core Concept: Atomic Evidence
+
+Atomic Evidence means:
+
+All evidence (SBOM, vulnerability results, provenance) is generated in a single execution context and cryptographically bound to the exact artifact digest at the moment of attestation.
+
+It does not mean that all checks must pass.
+	•	Evidence may contain gaps
+	•	External publishing may partially fail
+	•	Integrity must never be broken
+
+If atomicity is violated → Provenix fails hard.
+
+⸻
+
+Zero-Config First (MVP Philosophy)
+
+Provenix is designed so that OSS maintainers can run it with zero configuration:
+
+provenix generate <artifact>
+
+No keys. No YAML. No CI glue code.
+
+Important Design Choice
+
+When no configuration file is provided:
+
+Provenix automatically generates an in-memory default policy.
+
+This is not only acceptable — it is recommended.
+	•	Users get safe, predictable behavior
+	•	Defaults are explicit and documented
+	•	Generated policy is shown in logs (--debug)
+
+⸻
+
+Implicit Default Policy (Zero Config)
+
+The following policies are implicitly applied when provenix.yaml is absent.
+
+1. Identity Policy
+	•	Strategy: Keyless (OIDC)
+	•	Identity source:
+	•	CI: GitHub Actions / GitLab CI (auto-detected)
+	•	Local: local://user@host
+
+No private keys are ever managed by the user.
+
+⸻
+
+2. Attestation Policy
+	•	Tool: Cosign
+	•	Format: in-toto Statement v1
+	•	Scope: Minimal, honest provenance
+
+Included:
+	•	Artifact digest
+	•	Execution environment
+	•	Source reference (if detectable)
+	•	SBOM summary
+	•	Vulnerability scan summary
+
+Explicitly not claimed:
+	•	SLSA L3/L4 compliance
+	•	Code review or approval guarantees
+	•	Hardened builder assertions
+
+⸻
+
+3. SBOM Policy
+	•	Enabled by default
+	•	Tool: Syft (library mode)
+	•	Format: CycloneDX JSON
+
+SBOM is:
+	•	Generated in-memory
+	•	Never written as a standalone file
+	•	Cryptographically bound into the attestation
+
+This prevents TOCTOU-style replacement.
+
+⸻
+
+4. Vulnerability Scan Policy (Default: ENABLED)
+	•	Enabled by default
+	•	Tool: Grype
+	•	Mode: Observe
+
+Behavior:
+	•	Vulnerabilities are detected and recorded
+	•	Severity counts are embedded in attestation
+	•	Build is NOT blocked by findings
+
+Vulnerabilities are treated as evidence gaps, not failures.
+
+⸻
+
+5. License Checks
+	•	❌ Not implemented in MVP
+	•	❌ No implicit or explicit license enforcement
+
+This is intentionally excluded to keep scope honest.
+
+⸻
+
+6. Enforcement Mode
+	•	Mode: Observer (fixed in zero-config)
+
+Rules:
+	•	Cryptographic failures → exit 1
+	•	Evidence gaps → recorded, exit 0
+	•	Infra failures → degraded, exit 0
+
+Provenix never blocks silently.
+
+⸻
+
+7. Transparency Policy
+	•	Rekor publish:
+	•	CI: enabled by default
+	•	Local: disabled by default
+
+If Rekor is unavailable:
+	•	Local attestation is still produced
+	•	Failure is explicitly recorded
+
+Evidence is never discarded.
+
+⸻
+
+Configuration File (Optional, Opt-In)
+
+Advanced users may provide provenix.yaml to:
+	•	Enforce strict policies
+	•	Declare SLSA intent
+	•	Add organization-specific rules
+
+Example:
+
+version: 0.1
+identity:
+  strategy: keyless
+  issuer: github
+
+attestations:
+  - type: provenance
+  - type: vulnerability-scan
+    on_failure: warn
+
+enforcement:
+  mode: strict
+
+Providing a config only adds constraints — it never weakens defaults.
+
+⸻
+
+What Provenix Explicitly Does NOT Guarantee
+
+Provenix is precise about its boundaries.
+
+It does NOT guarantee:
+	•	That source code was reviewed or approved
+	•	That dependencies are authentic or trustworthy
+	•	That the build environment is hardened
+	•	That runtime behavior is secure
+
+It guarantees only what it can prove.
+
+⸻
+
+Failure Model (Atomic by Design)
+
+Provenix classifies failures as:
+	1.	Cryptographic Failure → hard stop
+	2.	Evidence Gap → recorded, continue
+	3.	Infrastructure Failure → degraded, continue
+
+Atomic Evidence succeeds when imperfection is explicit.
+
+⸻
+
+Summary
+	•	Zero-config is a first-class feature
+	•	Default policies are safe, minimal, and honest
+	•	Vulnerability scanning is enabled by default
+	•	Attestations are always generated with Cosign
+	•	Enforcement is explicit and opt-in
+
+Provenix records reality. You decide what to enforce.
