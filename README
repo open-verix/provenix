@@ -172,6 +172,43 @@ Evidence is never discarded.
 
 ⸻
 
+Configuration Philosophy
+
+Provenix follows a **Progressive Configuration** model:
+
+1. **Zero-Config (Default)**: Works out of the box with safe defaults
+2. **Minimal Config**: Add constraints without managing complexity  
+3. **Full Control**: Enterprise-grade policy enforcement
+
+**Configuration File Discovery:**
+
+`provenix.yaml` is **completely optional**. When absent, Provenix uses safe built-in defaults.
+
+Discovery order (project-scoped only):
+1. `--config` flag
+2. `PROVENIX_CONFIG` environment variable
+3. `./provenix.yaml` (current directory)
+4. `./.provenix/config.yaml` (local overrides, add to .gitignore)
+5. Walk up to `.git` directory and check `provenix.yaml`
+6. Built-in defaults (no config needed)
+
+**Security boundary:** Provenix never searches outside your project directory (`~/.provenix/` or `/etc/provenix/` are NOT used).
+
+**Recommended .gitignore:**
+```
+.provenix/config.yaml    # Personal settings (don't commit)
+.provenix/cache/         # SBOM database cache
+.provenix/attestations/  # Local attestations (regenerate in CI)
+```
+
+**Optional Setup Helper:**
+```bash
+# Generate template config (completely optional)
+provenix init
+```
+
+⸻
+
 Configuration File (Optional, Opt-In)
 
 Advanced users may provide provenix.yaml to:
