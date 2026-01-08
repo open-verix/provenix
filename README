@@ -177,7 +177,7 @@ Configuration Philosophy
 Provenix follows a **Progressive Configuration** model:
 
 1. **Zero-Config (Default)**: Works out of the box with safe defaults
-2. **Minimal Config**: Add constraints without managing complexity  
+2. **Minimal Config**: Add constraints without managing complexity
 3. **Full Control**: Enterprise-grade policy enforcement
 
 **Configuration File Discovery:**
@@ -185,6 +185,7 @@ Provenix follows a **Progressive Configuration** model:
 `provenix.yaml` is **completely optional**. When absent, Provenix uses safe built-in defaults.
 
 Discovery order (project-scoped only):
+
 1. `--config` flag
 2. `PROVENIX_CONFIG` environment variable
 3. `./provenix.yaml` (current directory)
@@ -195,6 +196,7 @@ Discovery order (project-scoped only):
 **Security boundary:** Provenix never searches outside your project directory (`~/.provenix/` or `/etc/provenix/` are NOT used).
 
 **Recommended .gitignore:**
+
 ```
 .provenix/config.yaml    # Personal settings (don't commit)
 .provenix/cache/         # SBOM database cache
@@ -202,6 +204,7 @@ Discovery order (project-scoped only):
 ```
 
 **Optional Setup Helper:**
+
 ```bash
 # Generate template config (completely optional)
 provenix init
