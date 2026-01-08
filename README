@@ -33,10 +33,11 @@ Let E = (A, C, T, σ) represent evidence, where:
 
 Atomicity Conditions:
 
-1. ∀c ∈ C, hash(c) is included in σ
-2. T is unique within a single execution session
-3. Generation order of C is deterministic (SBOM → Scan → Attestation)
-4. Digest of A is finalized before generating C
+1. σ signs the hash of the complete in-toto Statement containing all c ∈ C
+2. All c ∈ C are embedded in the signed payload (not separately hashed)
+3. T is unique within a single execution session
+4. Generation order of C is deterministic (SBOM → Scan → Attestation)
+5. Digest of A is finalized before generating any c ∈ C
 
 Non-Atomic Cases (Violations):
 
@@ -104,10 +105,13 @@ Included:
 • SBOM summary
 • Vulnerability scan summary
 
-Explicitly not claimed:
-• SLSA L3/L4 compliance
+Explicitly NOT claimed (MVP scope):
+• SLSA L3/L4 compliance (generates evidence but doesn't enforce L3 requirements)
 • Code review or approval guarantees
-• Hardened builder assertions
+• Hermetic build environment
+• Dependency pinning verification
+
+Note: SLSA L3 support is planned for Phase 2 (see docs/roadmap.md).
 
 ⸻
 
@@ -152,10 +156,12 @@ This is intentionally excluded to keep scope honest.
 
 Rules:
 • Cryptographic failures → exit 1
-• Evidence gaps → recorded, exit 0
-• Infra failures → degraded, exit 0
+• Evidence gaps → recorded, exit 2
+• Infra failures → degraded, exit 2
 
 Provenix never blocks silently.
+
+Note: In observe mode, vulnerabilities and infrastructure failures produce exit 2 (partial success), allowing CI to decide whether to fail or warn.
 
 ⸻
 
@@ -176,39 +182,20 @@ Configuration Philosophy
 
 Provenix follows a **Progressive Configuration** model:
 
-1. **Zero-Config (Default)**: Works out of the box with safe defaults
-2. **Minimal Config**: Add constraints without managing complexity
-3. **Full Control**: Enterprise-grade policy enforcement
+• **Zero-Config (Default)**: Works out of the box with safe defaults
+• **Minimal Config**: Add constraints without managing complexity  
+• **Enterprise Control**: Full policy enforcement
 
-**Configuration File Discovery:**
+**`provenix.yaml` is completely optional.** When absent, Provenix uses safe built-in defaults.
 
-`provenix.yaml` is **completely optional**. When absent, Provenix uses safe built-in defaults.
+Configuration is discovered within your project directory only (never searches `~/.provenix/` or `/etc/provenix/`).
 
-Discovery order (project-scoped only):
-
-1. `--config` flag
-2. `PROVENIX_CONFIG` environment variable
-3. `./provenix.yaml` (current directory)
-4. `./.provenix/config.yaml` (local overrides, add to .gitignore)
-5. Walk up to `.git` directory and check `provenix.yaml`
-6. Built-in defaults (no config needed)
-
-**Security boundary:** Provenix never searches outside your project directory (`~/.provenix/` or `/etc/provenix/` are NOT used).
-
-**Recommended .gitignore:**
-
-```
-.provenix/config.yaml    # Personal settings (don't commit)
-.provenix/cache/         # SBOM database cache
-.provenix/attestations/  # Local attestations (regenerate in CI)
-```
-
-**Optional Setup Helper:**
-
+**Optional setup helper:**
 ```bash
-# Generate template config (completely optional)
-provenix init
+provenix init  # Generates template config
 ```
+
+For detailed configuration options, see `docs/configuration.md`.
 
 ⸻
 
