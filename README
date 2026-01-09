@@ -111,7 +111,7 @@ Explicitly NOT claimed (MVP scope):
 • Hermetic build environment
 • Dependency pinning verification
 
-Note: SLSA L3 support is planned for Phase 2 (see docs/roadmap.md).
+Note: SLSA L3 compliance enforcement is planned for post-MVP (see docs/roadmap.md).
 
 ⸻
 
@@ -191,6 +191,7 @@ Provenix follows a **Progressive Configuration** model:
 Configuration is discovered within your project directory only (never searches `~/.provenix/` or `/etc/provenix/`).
 
 **Optional setup helper:**
+
 ```bash
 provenix init  # Generates template config
 ```
