@@ -17,6 +17,7 @@ Provenix is a **Policy-Driven Software Supply Chain Orchestrator** written in Go
 **Definition:** Evidence E = (Artifact A, SBOM C, Vulnerability Report V, Signature σ) where σ signs the complete in-toto Statement containing A, C, and V.
 
 **Critical Rules:**
+
 - All data must flow in-memory (NO temporary files)
 - SBOM generation and vulnerability scanning must be atomic
 - Signature σ must cover the complete statement
@@ -54,11 +55,13 @@ func generateSBOM() {
 ### 4. Configuration Philosophy
 
 **Project-Scoped Only:**
+
 - Search for `provenix.yaml` in project root ONLY
 - NEVER search `~/.config/provenix/` or `/etc/provenix/`
 - NEVER create global configuration files
 
 **Priority Order:**
+
 1. CLI flags (`--config`)
 2. Environment variables (`PROVENIX_*`)
 3. `provenix.yaml` in project root
@@ -150,7 +153,7 @@ require (
 
 ```go
 // ✅ CORRECT - Via provider interface
-import "github.com/yourorg/provenix/internal/providers/sbom"
+import "github.com/open-verix/provenix/internal/providers/sbom"
 
 // ⚠️ USE SPARINGLY - Only in provider implementations
 import "github.com/anchore/syft/syft"
@@ -166,16 +169,19 @@ import "github.com/anchore/syft/syft"
 ### Coverage Target: 80%+
 
 **Unit Tests:**
+
 - Mock all external dependencies
 - Test error paths
 - Test edge cases (empty strings, nil pointers, etc.)
 
 **Integration Tests:**
+
 - Use real Docker images (nginx:latest, alpine:latest)
 - Test OCI archives
 - Test directory scanning
 
 **E2E Tests:**
+
 - Full pipeline: SBOM → Scan → Sign → Publish
 - Test against Sigstore staging environment
 - Verify exit codes
@@ -240,11 +246,13 @@ evidence, err := generator.Generate(ctx, artifact, opts)
 ### Progressive Disclosure
 
 **Simple by default:**
+
 ```bash
 provenix attest myapp
 ```
 
 **Advanced options available:**
+
 ```bash
 provenix attest myapp \
   --format spdx \
@@ -385,6 +393,7 @@ type Generator struct {
 ### Update docs/ When Changing Behavior
 
 If you modify:
+
 - CLI commands → Update `docs/cli_specification.md`
 - Configuration → Update `docs/configuration.md`
 - Exit codes → Update `docs/atomic_evidence_failure_model.md`
@@ -459,13 +468,13 @@ func LoadConfig(projectRoot string) (*Config, error) {
         filepath.Join(projectRoot, "provenix.yaml"),
         filepath.Join(projectRoot, ".provenix.yaml"),
     }
-    
+
     for _, path := range paths {
         if fileExists(path) {
             return parseConfig(path)
         }
     }
-    
+
     return defaultConfig(), nil
 }
 ```
