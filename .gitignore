@@ -1,0 +1,41 @@
+.env
+.vscode/
+
+# Binaries
+provenix
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test coverage
+*.out
+coverage.txt
+coverage.html
+
+# Build artifacts
+dist/
+build/
+bin/
+
+# Go workspace
+go.work
+go.work.sum
+
+# IDEs
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Local attestations
+.provenix/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# CI artifacts
+.github/workflows/.cache/

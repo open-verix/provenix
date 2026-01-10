@@ -301,7 +301,7 @@ Exit Codes:
 
 ```go
 // ❌ WRONG
-cmd := exec.Command("syft", "nginx:latest", "-o", "spdx-json")
+cmd := exec.Command("syft", "nginx:latest", "-o", "cyclonedx-json")
 output, _ := cmd.Output()
 
 // ✅ CORRECT
