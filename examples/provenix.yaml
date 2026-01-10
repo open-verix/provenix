@@ -1,0 +1,189 @@
+# Provenix Configuration File
+# This file configures Provenix's behavior for SBOM generation, vulnerability scanning,
+# and attestation signing.
+#
+# Configuration Priority (highest to lowest):
+#   1. CLI flags (e.g., --format spdx-json)
+#   2. Environment variables (e.g., PROVENIX_SBOM_FORMAT=spdx-json)
+#   3. This configuration file (provenix.yaml)
+#   4. Built-in defaults
+
+# ==============================================================================
+# SBOM Generation Configuration
+# ==============================================================================
+sbom:
+  # Output format for SBOM
+  # Options: spdx-json, cyclonedx-json, syft-json
+  # Default: spdx-json
+  format: spdx-json
+
+  # Include file metadata in SBOM (file hashes, permissions, etc.)
+  # Default: false (smaller SBOMs, faster generation)
+  include-files: false
+
+  # Catalogers to enable (optional, Syft auto-detects by default)
+  # catalogers:
+  #   - go-module
+  #   - python-package
+  #   - npm-package
+
+# ==============================================================================
+# Vulnerability Scanning Configuration
+# ==============================================================================
+scan:
+  # Minimum severity to report
+  # Options: negligible, low, medium, high, critical
+  # Default: medium
+  min-severity: medium
+
+  # Fail on vulnerabilities at or above this severity
+  # Set to empty string to never fail on vulnerabilities
+  # Default: critical
+  fail-on: critical
+
+  # Show fixed vulnerabilities in report
+  # Default: true
+  show-fixed: true
+
+  # Vulnerability database configuration
+  database:
+    # Auto-update vulnerability database
+    # Default: true
+    auto-update: true
+
+    # Maximum age of database before forcing update (in hours)
+    # Default: 24
+    max-age: 24
+
+# ==============================================================================
+# Signing Configuration
+# ==============================================================================
+signing:
+  # Signing mode
+  # Options: keyless (OIDC), key (local private key)
+  # Default: keyless
+  mode: keyless
+
+  # For keyless signing (OIDC)
+  oidc:
+    # OIDC provider (auto-detected in CI)
+    # Options: github, gitlab, auto
+    # Default: auto
+    provider: auto
+
+    # Fulcio server URL
+    # Default: https://fulcio.sigstore.dev
+    fulcio-url: https://fulcio.sigstore.dev
+
+  # For local key signing (development only)
+  # key:
+  #   path: /path/to/private-key.pem
+  #   password-env: PROVENIX_KEY_PASSWORD
+
+# ==============================================================================
+# Transparency Log Configuration
+# ==============================================================================
+rekor:
+  # Rekor server URL
+  # Default: https://rekor.sigstore.dev
+  url: https://rekor.sigstore.dev
+
+  # Timeout for Rekor operations (in seconds)
+  # Default: 30
+  timeout: 30
+
+  # Retry configuration for Rekor publishing
+  retry:
+    # Maximum number of retry attempts
+    # Default: 3
+    max-attempts: 3
+
+    # Initial retry delay (in seconds)
+    # Default: 1
+    initial-delay: 1
+
+    # Maximum retry delay (in seconds)
+    # Default: 10
+    max-delay: 10
+
+# ==============================================================================
+# Output Configuration
+# ==============================================================================
+output:
+  # Default output file for attestations
+  # Default: attestation.json
+  file: attestation.json
+
+  # Output format
+  # Options: json, yaml
+  # Default: json
+  format: json
+
+  # Pretty-print output
+  # Default: true
+  pretty: true
+
+  # Include SBOM in attestation output
+  # Default: true
+  include-sbom: true
+
+  # Include vulnerability report in attestation output
+  # Default: true
+  include-scan: true
+
+# ==============================================================================
+# Local Storage Configuration
+# ==============================================================================
+storage:
+  # Directory for locally-saved attestations (when Rekor unavailable)
+  # Default: .provenix/attestations
+  dir: .provenix/attestations
+
+  # Auto-cleanup old attestations (in days)
+  # Set to 0 to disable auto-cleanup
+  # Default: 30
+  retention-days: 30
+
+# ==============================================================================
+# Policy Configuration (Post-MVP)
+# ==============================================================================
+# policy:
+#   # Strict mode: fail on any policy violation
+#   # Default: false
+#   strict: false
+#
+#   # Vulnerability thresholds
+#   vulnerabilities:
+#     critical: 0  # Fail if any critical vulnerabilities found
+#     high: 5      # Fail if more than 5 high vulnerabilities found
+#
+#   # License policy (requires license scanning, post-MVP)
+#   # licenses:
+#   #   allow:
+#   #     - MIT
+#   #     - Apache-2.0
+#   #   deny:
+#   #     - GPL-3.0
+#
+#   # SLSA level enforcement (post-MVP)
+#   # slsa:
+#   #   level: 3
+#   #   require-hermetic: true
+
+# ==============================================================================
+# Logging Configuration
+# ==============================================================================
+logging:
+  # Log level
+  # Options: debug, info, warn, error
+  # Default: info
+  level: info
+
+  # Log format
+  # Options: text, json
+  # Default: text
+  format: text
+
+  # Show timestamps in logs
+  # Default: true
+  timestamps: true
