@@ -39,3 +39,6 @@ temp/
 
 # CI artifacts
 .github/workflows/.cache/
+
+# examples output
+examples/
