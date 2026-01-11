@@ -54,7 +54,7 @@ Supported Artifacts:
 func init() {
 	attestCmd.Flags().Bool("local", false, "Local-only mode (no Rekor publishing)")
 	attestCmd.Flags().StringP("output", "o", "attestation.json", "Output file path")
-	attestCmd.Flags().String("format", "cyclonedx-json", "SBOM format (spdx-json, cyclonedx-json)")
+	attestCmd.Flags().String("format", "cyclonedx-json", "SBOM format (cyclonedx-json, spdx-json, syft-json)")
 	attestCmd.Flags().String("config", "", "Path to provenix.yaml configuration file")
 	attestCmd.Flags().String("key", "", "Path to private key (for development)")
 }

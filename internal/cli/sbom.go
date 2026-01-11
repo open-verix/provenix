@@ -16,15 +16,18 @@ format. Unlike 'attest', this command only generates the SBOM without
 vulnerability scanning or signing.
 
 Supported Formats:
-  • cyclonedx-json (default)
-  • spdx-json
-  • syft-json
+  • cyclonedx-json (default) - Security-focused, VEX support
+  • spdx-json - ISO standard, compliance-focused
+  • syft-json - Syft native format, most detailed
 `,
 	Example: `  # Generate SBOM for a Docker image
   provenix sbom nginx:latest
 
-  # Generate SBOM with spdx-json format
+  # Generate SBOM with SPDX format
   provenix sbom --format spdx-json myapp:v1.0
+
+  # Generate SBOM with Syft native format
+  provenix sbom --format syft-json myapp:v1.0
 
   # Output to specific file
   provenix sbom myapp --output sbom.json`,
@@ -34,7 +37,7 @@ Supported Formats:
 
 func init() {
 	sbomCmd.Flags().StringP("output", "o", "-", "Output file path (- for stdout)")
-	sbomCmd.Flags().String("format", "cyclonedx-json", "SBOM format")
+	sbomCmd.Flags().String("format", "cyclonedx-json", "SBOM format (cyclonedx-json, spdx-json, syft-json)")
 }
 
 func runSBOM(cmd *cobra.Command, args []string) error {
