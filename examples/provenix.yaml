@@ -13,9 +13,14 @@
 # ==============================================================================
 sbom:
   # Output format for SBOM
-  # Options: spdx-json, cyclonedx-json, syft-json
-  # Default: spdx-json
-  format: spdx-json
+  # Options: cyclonedx-json, spdx-json, syft-json
+  # Default: cyclonedx-json
+  #
+  # Format Selection Guide:
+  #   - cyclonedx-json: Security-focused, native VEX support, optimized for vulnerability scanning
+  #   - spdx-json: Compliance-focused, ISO/IEC 5962:2021 standard, detailed license information
+  #   - syft-json: Syft native format, most detailed metadata, internal use
+  format: cyclonedx-json
 
   # Include file metadata in SBOM (file hashes, permissions, etc.)
   # Default: false (smaller SBOMs, faster generation)
