@@ -1,9 +1,23 @@
 package cli
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"time"
 
 	"github.com/spf13/cobra"
+	
+	"github.com/open-verix/provenix/internal/config"
+	"github.com/open-verix/provenix/internal/evidence"
+	"github.com/open-verix/provenix/internal/providers"
+	"github.com/open-verix/provenix/internal/providers/sbom"
+	sbommock "github.com/open-verix/provenix/internal/providers/sbom/mock"
+	"github.com/open-verix/provenix/internal/providers/scanner"
+	scannermock "github.com/open-verix/provenix/internal/providers/scanner/mock"
+	"github.com/open-verix/provenix/internal/providers/signer"
+	signermock "github.com/open-verix/provenix/internal/providers/signer/mock"
 )
 
 var attestCmd = &cobra.Command{
@@ -61,7 +75,168 @@ func init() {
 
 func runAttest(cmd *cobra.Command, args []string) error {
 	artifact := args[0]
+	
+	// Get flags
+	localMode, _ := cmd.Flags().GetBool("local")
+	outputPath, _ := cmd.Flags().GetString("output")
+	sbomFormat, _ := cmd.Flags().GetString("format")
+	configPath, _ := cmd.Flags().GetString("config")
+	keyPath, _ := cmd.Flags().GetString("key")
+	
 	fmt.Printf("🔍 Attesting artifact: %s\n", artifact)
-	fmt.Println("⚠️  Not implemented yet - coming in Week 6-7")
+	
+	// Load configuration
+	var cfg *config.Config
+	var err error
+	
+	if configPath != "" {
+		cfg, err = config.Load(configPath)
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+	} else {
+		cfg = config.Default()
+	}
+	
+	// Override with CLI flags
+	if sbomFormat != "" {
+		cfg.SBOM.Format = sbomFormat
+	}
+	if keyPath != "" {
+		cfg.Signing.Key.Path = keyPath
+		cfg.Signing.Mode = "key"
+	}
+	// Note: SkipTransparency is controlled via Rekor URL (empty = skip)
+	if localMode {
+		cfg.Rekor.URL = "" // Empty URL means skip transparency log
+	}
+	
+	// Validate configuration
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("invalid configuration: %w", err)
+	}
+	
+	// TODO: Replace with actual provider implementations in Week 5-7
+	// For now, use mock providers to demonstrate the pipeline
+	fmt.Println("⚠️  Using mock providers (actual implementations coming in Week 5-7)")
+	
+	sbomProvider, err := providers.GetSBOMProvider("mock")
+	if err != nil {
+		// Register mock provider if not already registered
+		sbomProvider = sbommock.NewProvider()
+		providers.RegisterSBOMProvider("mock", sbomProvider)
+	}
+	
+	scannerProvider, err := providers.GetScannerProvider("mock")
+	if err != nil {
+		scannerProvider = scannermock.NewProvider()
+		providers.RegisterScannerProvider("mock", scannerProvider)
+	}
+	
+	signerProvider, err := providers.GetSignerProvider("mock")
+	if err != nil {
+		signerProvider = signermock.NewProvider()
+		providers.RegisterSignerProvider("mock", signerProvider)
+	}
+	
+	// Create evidence generator
+	gen := evidence.NewGenerator(sbomProvider, scannerProvider, signerProvider)
+	
+	// Prepare generation options
+	opts := evidence.GenerateOptions{
+		SBOMOptions: sbom.Options{
+			Format: sbom.Format(cfg.SBOM.Format),
+		},
+		ScanOptions: scanner.Options{
+			FailOnSeverity: scanner.Severity(cfg.Scan.FailOn),
+		},
+		SignOptions: signer.Options{
+			Mode:             signer.SigningMode(cfg.Signing.Mode),
+			KeyPath:          cfg.Signing.Key.Path,
+			FulcioURL:        cfg.Signing.OIDC.FulcioURL,
+			RekorURL:         cfg.Rekor.URL,
+			SkipTransparency: cfg.Rekor.URL == "",
+		},
+		GeneratorVersion: "dev", // TODO: Use actual version from build
+	}
+	
+	// Generate evidence
+	fmt.Println("📦 Generating SBOM...")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	
+	ev, err := gen.Generate(ctx, artifact, opts)
+	if err != nil {
+		fmt.Printf("❌ Evidence generation failed: %v\n", err)
+		return err
+	}
+	
+	fmt.Printf("✅ SBOM generated (%s, %d packages)\n", 
+		ev.SBOM.Format, 
+		extractPackageCount(ev.SBOM))
+	
+	fmt.Printf("🔍 Vulnerability scan complete (%d vulnerabilities found)\n",
+		len(ev.VulnerabilityReport.Vulnerabilities))
+	
+	fmt.Printf("🔏 Signature created (provider: %s)\n", 
+		ev.Signature.SignerProvider)
+	
+	// Save attestation
+	if err := saveEvidence(ev, outputPath); err != nil {
+		return fmt.Errorf("failed to save attestation: %w", err)
+	}
+	
+	fmt.Printf("💾 Attestation saved to: %s\n", outputPath)
+	
+	// Summary
+	fmt.Println("\n📊 Summary:")
+	fmt.Printf("  Artifact:        %s\n", ev.Artifact)
+	fmt.Printf("  Digest:          %s\n", ev.ArtifactDigest)
+	fmt.Printf("  SBOM Format:     %s\n", ev.SBOM.Format)
+	fmt.Printf("  Vulnerabilities: %d\n", len(ev.VulnerabilityReport.Vulnerabilities))
+	fmt.Printf("  Generation Time: %s\n", ev.Metadata.Duration)
+	
+	// Check if we should fail based on vulnerability severity
+	if ev.VulnerabilityReport.ShouldFail(scanner.Severity(cfg.Scan.FailOn)) {
+		fmt.Printf("\n⚠️  Found vulnerabilities above threshold: %s\n", cfg.Scan.FailOn)
+		// Note: In production, this would be a different exit code or handled by caller
+	}
+	
 	return nil
+}
+
+// saveEvidence saves evidence to a JSON file.
+func saveEvidence(ev *evidence.Evidence, path string) error {
+	data, err := json.MarshalIndent(ev, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal evidence: %w", err)
+	}
+	
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+	
+	return nil
+}
+
+// extractPackageCount tries to extract package count from SBOM content.
+func extractPackageCount(s *sbom.SBOM) int {
+	// This is a best-effort extraction from the SBOM content
+	// The actual structure depends on the format
+	var content map[string]interface{}
+	if err := json.Unmarshal(s.Content, &content); err != nil {
+		return 0
+	}
+	
+	// Try CycloneDX format
+	if components, ok := content["components"].([]interface{}); ok {
+		return len(components)
+	}
+	
+	// Try SPDX format
+	if packages, ok := content["packages"].([]interface{}); ok {
+		return len(packages)
+	}
+	
+	return 0
 }
