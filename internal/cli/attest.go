@@ -157,7 +157,7 @@ func runAttest(cmd *cobra.Command, args []string) error {
 			RekorURL:         cfg.Rekor.URL,
 			SkipTransparency: cfg.Rekor.URL == "",
 		},
-		GeneratorVersion: "dev", // TODO: Use actual version from build
+		GeneratorVersion: Version,
 	}
 	
 	// Generate evidence
@@ -185,7 +185,7 @@ func runAttest(cmd *cobra.Command, args []string) error {
 	if err := saveEvidence(ev, outputPath); err != nil {
 		return fmt.Errorf("failed to save attestation: %w", err)
 	}
-	
+    
 	fmt.Printf("💾 Attestation saved to: %s\n", outputPath)
 	
 	// Summary
@@ -199,10 +199,26 @@ func runAttest(cmd *cobra.Command, args []string) error {
 	// Check if we should fail based on vulnerability severity
 	if ev.VulnerabilityReport.ShouldFail(scanner.Severity(cfg.Scan.FailOn)) {
 		fmt.Printf("\n⚠️  Found vulnerabilities above threshold: %s\n", cfg.Scan.FailOn)
-		// Note: In production, this would be a different exit code or handled by caller
+		// Policy-controlled behavior; we do not change exit code here yet
 	}
-	
-	return nil
+
+	// Exit code semantics
+	// 0: signed and published to Rekor
+	// 2: partial success (saved locally, Rekor unavailable)
+	// Local mode (skip transparency) is considered success
+	skipTransparency := cfg.Rekor.URL == "" || opts.SignOptions.SkipTransparency
+	if skipTransparency {
+		fmt.Println("🌐 Transparency: skipped (local mode)")
+		return nil
+	}
+
+	if ev.Signature != nil && ev.Signature.RekorEntry != "" {
+		fmt.Printf("🌐 Published to Rekor: %s\n", ev.Signature.RekorEntry)
+		return nil
+	}
+
+	fmt.Println("🌐 Rekor publishing failed or unavailable; local attestation retained")
+	return &ExitError{Code: 2, Err: fmt.Errorf("rekor publishing unavailable")}
 }
 
 // saveEvidence saves evidence to a JSON file.
