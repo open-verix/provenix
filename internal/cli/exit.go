@@ -17,6 +17,13 @@ func (e *ExitError) Error() string {
     return ""
 }
 
+// Exit codes
+const (
+    ExitSuccess        = 0
+    ExitFatal          = 1
+    ExitPartialSuccess = 2
+)
+
 // ExitCode maps any error to an exit code following Provenix semantics.
 // Unknown errors default to 1.
 func ExitCode(err error) int {
