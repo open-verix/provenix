@@ -118,25 +118,27 @@ func runAttest(cmd *cobra.Command, args []string) error {
 	
 	// TODO: Replace with actual provider implementations in Week 5-7
 	// For now, use mock providers to demonstrate the pipeline
-	fmt.Println("⚠️  Using mock providers (actual implementations coming in Week 5-7)")
+	fmt.Println("⚠️  Using real Syft/Grype providers (Cosign stub)")
 	
-	sbomProvider, err := providers.GetSBOMProvider("mock")
+	// Get SBOM provider (Syft is registered in internal/providers/sbom/register.go)
+	sbomProvider, err := providers.GetSBOMProvider("syft")
 	if err != nil {
-		// Register mock provider if not already registered
+		fmt.Println("⚠️  Syft provider not available, falling back to mock")
 		sbomProvider = sbommock.NewProvider()
-		providers.RegisterSBOMProvider("mock", sbomProvider)
 	}
 	
-	scannerProvider, err := providers.GetScannerProvider("mock")
+	// Get scanner provider (Grype is registered in internal/providers/scanner/register.go)
+	scannerProvider, err := providers.GetScannerProvider("grype")
 	if err != nil {
+		fmt.Println("⚠️  Grype provider not available, falling back to mock")
 		scannerProvider = scannermock.NewProvider()
-		providers.RegisterScannerProvider("mock", scannerProvider)
 	}
 	
-	signerProvider, err := providers.GetSignerProvider("mock")
+	// Get signer provider (Cosign is registered in internal/providers/signer/register.go)
+	signerProvider, err := providers.GetSignerProvider("cosign")
 	if err != nil {
+		fmt.Println("⚠️  Cosign provider not available, falling back to mock")
 		signerProvider = signermock.NewProvider()
-		providers.RegisterSignerProvider("mock", signerProvider)
 	}
 	
 	// Create evidence generator
