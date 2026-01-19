@@ -1,15 +1,20 @@
 package syft
 
 import (
+	"bytes"
 	"context"
+	"crypto"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/syft/syft"
+	"github.com/anchore/syft/syft/cataloging"
 	"github.com/anchore/syft/syft/sbom"
+	syftformat "github.com/anchore/syft/syft/format"
 
 	sbomprovider "github.com/open-verix/provenix/internal/providers/sbom"
 	"github.com/open-verix/provenix/internal/providers"
@@ -43,29 +48,30 @@ func (p *Provider) Generate(ctx context.Context, artifact string, opts sbomprovi
 		return nil, err
 	}
 
-	// Create source based on artifact type
-	src, err := syft.GetSource(ctx, artifact, &syft.GetSourceConfig{})
+	// Create GetSourceConfig with optimal settings
+	getSourceCfg := p.createGetSourceConfig(artifact, opts)
+
+	// Get source from artifact
+	src, err := syft.GetSource(ctx, artifact, getSourceCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source for %s: %w", artifact, err)
 	}
 	defer src.Close()
 
-	// Create SBOM using Syft
-	sbomObj, err := syft.CreateSBOM(ctx, src, &syft.CreateSBOMConfig{
-		ToolName:    "provenix",
-		ToolVersion: p.version,
-	})
+	// Create SBOM using Syft with optimized config
+	createSBOMCfg := p.createCreateSBOMConfig(opts)
+	sbomObj, err := syft.CreateSBOM(ctx, src, createSBOMCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SBOM: %w", err)
 	}
 
-	// Encode SBOM to requested format
+	// Encode SBOM to requested format (spec-compliant)
 	contentJSON, err := p.encodeSBOM(sbomObj, opts.Format)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode SBOM: %w", err)
 	}
 
-	// Calculate SHA256 checksum
+	// Calculate SHA256 checksum for integrity
 	hash := sha256.Sum256(contentJSON)
 	checksum := hex.EncodeToString(hash[:])
 
@@ -80,28 +86,102 @@ func (p *Provider) Generate(ctx context.Context, artifact string, opts sbomprovi
 	}, nil
 }
 
-// encodeSBOM encodes the SBOM to the requested format.
-// Syft 1.40.x provides formatters through the sbom.Sbom.Encoder() interface
+// createGetSourceConfig creates an optimized GetSourceConfig based on options.
+// Handles Platform (multi-arch), SourceProviderConfig, and DefaultImagePullSource.
+func (p *Provider) createGetSourceConfig(artifact string, opts sbomprovider.Options) *syft.GetSourceConfig {
+	cfg := &syft.GetSourceConfig{}
+
+	// Set platform for multi-architecture images
+	if opts.Platform != "" {
+		platform, err := image.NewPlatform(opts.Platform)
+		if err == nil {
+			cfg = cfg.WithPlatform(platform)
+		}
+	}
+
+	// Determine source provider priority
+	if opts.Local {
+		// Local filesystem: prefer directory scanning
+		cfg = cfg.WithDefaultImagePullSource("dir")
+	} else {
+		// Remote: prefer container registry
+		cfg = cfg.WithDefaultImagePullSource("registry")
+	}
+
+	// Add digest algorithms for integrity verification
+	cfg = cfg.WithDigestAlgorithms(crypto.SHA256)
+
+	return cfg
+}
+
+// createCreateSBOMConfig creates an optimized CreateSBOMConfig.
+func (p *Provider) createCreateSBOMConfig(opts sbomprovider.Options) *syft.CreateSBOMConfig {
+	cfg := syft.DefaultCreateSBOMConfig()
+
+	// Set tool information for audit trail
+	cfg.ToolName = "provenix"
+	cfg.ToolVersion = p.version
+
+	// Enable license cataloging with default config
+	cfg = cfg.WithLicenseConfig(cataloging.DefaultLicenseConfig())
+
+	return cfg
+}
+
+// encodeSBOM encodes the SBOM to the requested format using Syft's FormatEncoder interface.
+// Supports CycloneDX JSON, SPDX JSON, and Syft JSON formats with spec compliance.
 func (p *Provider) encodeSBOM(sbomObj *sbom.SBOM, format sbomprovider.Format) ([]byte, error) {
-	// For now, encode as JSON representation of the SBOM object
-	// This is a simplified approach that generates valid JSON
-	data := map[string]interface{}{
-		"format":  string(format),
-		"version": p.version,
-		"artifacts": map[string]interface{}{
-			"packages": "cataloged", // PackageCollection doesn't support len()
-			"files":    "available",
-		},
-		"source": sbomObj.Source,
-		"descriptor": sbomObj.Descriptor,
-	}
-
-	contentJSON, err := json.MarshalIndent(data, "", "  ")
+	// Get appropriate encoder for the format
+	enc, err := p.getFormatEncoder(format)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal SBOM to JSON: %w", err)
+		return nil, fmt.Errorf("unsupported format %s: %w", format, err)
 	}
 
-	return contentJSON, nil
+	// Encode SBOM to writer
+	var buf bytes.Buffer
+	if err := enc.Encode(&buf, *sbomObj); err != nil {
+		return nil, fmt.Errorf("failed to encode SBOM as %s: %w", format, err)
+	}
+
+	// Pretty-print JSON output
+	var pretty bytes.Buffer
+	if err := json.Indent(&pretty, buf.Bytes(), "", "  "); err != nil {
+		// Return non-pretty version if indent fails
+		return buf.Bytes(), nil
+	}
+
+	return pretty.Bytes(), nil
+}
+
+// getFormatEncoder returns the appropriate FormatEncoder for the requested format.
+func (p *Provider) getFormatEncoder(fmtType sbomprovider.Format) (sbom.FormatEncoder, error) {
+	// Get all available encoders from Syft format package
+	encoders := syftformat.Encoders()
+	if len(encoders) == 0 {
+		return nil, fmt.Errorf("no encoders available")
+	}
+
+	// Map our format to Syft format IDs
+	var targetID sbom.FormatID
+	switch fmtType {
+	case sbomprovider.FormatCycloneDXJSON:
+		targetID = "cyclonedx-json"
+	case sbomprovider.FormatSPDXJSON:
+		targetID = "spdx-json"
+	case sbomprovider.FormatSyftJSON:
+		targetID = "syft-json"
+	default:
+		return nil, fmt.Errorf("unknown format: %s", fmtType)
+	}
+
+	// Find matching encoder
+	for _, enc := range encoders {
+		if enc.ID() == targetID {
+			return enc, nil
+		}
+	}
+
+	return nil, fmt.Errorf("encoder not found for format %s", targetID)
 }
 
 // Name returns the provider name.
