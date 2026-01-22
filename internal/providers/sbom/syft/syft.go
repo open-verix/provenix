@@ -18,6 +18,9 @@ import (
 
 	sbomprovider "github.com/open-verix/provenix/internal/providers/sbom"
 	"github.com/open-verix/provenix/internal/providers"
+
+	// Import SQLite driver for RPM database cataloging
+	_ "modernc.org/sqlite"
 )
 
 // Provider implements sbom.Provider using Syft library.
@@ -89,7 +92,7 @@ func (p *Provider) Generate(ctx context.Context, artifact string, opts sbomprovi
 // createGetSourceConfig creates an optimized GetSourceConfig based on options.
 // Handles Platform (multi-arch), SourceProviderConfig, and DefaultImagePullSource.
 func (p *Provider) createGetSourceConfig(artifact string, opts sbomprovider.Options) *syft.GetSourceConfig {
-	cfg := &syft.GetSourceConfig{}
+	cfg := syft.DefaultGetSourceConfig()
 
 	// Set platform for multi-architecture images
 	if opts.Platform != "" {
@@ -100,13 +103,12 @@ func (p *Provider) createGetSourceConfig(artifact string, opts sbomprovider.Opti
 	}
 
 	// Determine source provider priority
-	if opts.Local {
-		// Local filesystem: prefer directory scanning
-		cfg = cfg.WithDefaultImagePullSource("dir")
-	} else {
+	if !opts.Local {
 		// Remote: prefer container registry
 		cfg = cfg.WithDefaultImagePullSource("registry")
 	}
+	// Note: For local filesystem, don't set DefaultImagePullSource
+	// Syft will auto-detect based on artifact path
 
 	// Add digest algorithms for integrity verification
 	cfg = cfg.WithDigestAlgorithms(crypto.SHA256)
