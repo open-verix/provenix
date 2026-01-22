@@ -9,10 +9,25 @@ import (
 
 	scannerprovider "github.com/open-verix/provenix/internal/providers/scanner"
 	"github.com/open-verix/provenix/internal/providers"
+	
+	// Grype imports for future complete implementation
+	// TODO: Complete Grype integration in Step 1.2
+	// "github.com/anchore/grype/grype"
+	// "github.com/anchore/grype/grype/match"
+	// "github.com/anchore/grype/grype/vulnerability"
 )
 
 // Provider implements scanner.Provider using Grype library.
-// Note: Stub implementation for MVP. Full API integration deferred to Phase 2.
+// 
+// Current Status: Stub implementation for MVP completion
+// TODO: Full Grype API integration deferred due to package type compatibility issues
+// between Syft v1.40.0 and Grype v0.104.4
+//
+// Next Steps (Post-MVP):
+// 1. Resolve Syft Package → Grype Package conversion
+// 2. Implement vulnerability database loading
+// 3. Use VulnerabilityMatcher.FindMatches() for real scanning
+// 4. Parse and convert vulnerability metadata (severity, description, URLs)
 type Provider struct {
 	version string
 }
@@ -20,11 +35,14 @@ type Provider struct {
 // NewProvider creates a new Grype-based scanner provider.
 func NewProvider() *Provider {
 	return &Provider{
-		version: "0.104.4",
+		version: "0.104.4", // Grype version (pinned)
 	}
 }
 
 // Scan generates a vulnerability report from an SBOM.
+//
+// Current Implementation: Returns empty vulnerability list (stub)
+// Real Implementation: Will use Grype's VulnerabilityMatcher to scan packages
 func (p *Provider) Scan(ctx context.Context, input scannerprovider.ScanInput, opts scannerprovider.Options) (*scannerprovider.Report, error) {
 	artifact := input.Artifact
 	if input.SBOM != nil {
@@ -34,15 +52,23 @@ func (p *Provider) Scan(ctx context.Context, input scannerprovider.ScanInput, op
 		artifact = "unknown"
 	}
 
+	// TODO: Implement real Grype scanning
+	// Steps:
+	// 1. Parse input.SBOM.Content to get Syft SBOM
+	// 2. Convert Syft packages to Grype packages
+	// 3. Load vulnerability database
+	// 4. Execute matchers
+	// 5. Convert matches to scanner.Report
+
 	report := &scannerprovider.Report{
 		Artifact:        artifact,
 		Vulnerabilities: []scannerprovider.Vulnerability{},
-		Content:         json.RawMessage(`{"vulnerabilities":[], "scan_status": "stub_for_mvp"}`),
-		Checksum:        calculateHash(`{"vulnerabilities":[], "scan_status": "stub_for_mvp"}`),
+		Content:         json.RawMessage(`{"status":"stub_implementation","matches":[],"note":"Real Grype scanning deferred to post-MVP"}`),
+		Checksum:        calculateHash(`{"status":"stub_implementation","matches":[],"note":"Real Grype scanning deferred to post-MVP"}`),
 		ScannedAt:       time.Now().UTC(),
 		ProviderName:    p.Name(),
 		ProviderVersion: p.Version(),
-		DBVersion:       p.version,
+		DBVersion:       "stub",
 	}
 
 	return report, nil
@@ -60,7 +86,8 @@ func (p *Provider) Version() string {
 
 // DBVersion returns the vulnerability database version.
 func (p *Provider) DBVersion(ctx context.Context) (string, error) {
-	return "grype-db-stub-" + time.Now().Format("20060102"), nil
+	// TODO: Return real database version after full implementation
+	return "grype-db:stub-" + time.Now().Format("20060102"), nil
 }
 
 // calculateHash computes SHA256 hash of content.
