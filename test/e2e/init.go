@@ -15,4 +15,7 @@ func init() {
 	// Register Mock providers for scan and sign
 	providers.RegisterScannerProvider("mock", &grypemock.Provider{})
 	providers.RegisterSignerProvider("mock", &signermock.Provider{})
+	
+	// Note: Real Grype and Cosign providers are registered in real_providers_test.go
+	// to avoid SQLite driver conflicts during package initialization
 }
