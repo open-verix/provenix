@@ -5,6 +5,9 @@ import (
 	"github.com/open-verix/provenix/internal/providers/sbom/syft"
 	grypemock "github.com/open-verix/provenix/internal/providers/scanner/mock"
 	signermock "github.com/open-verix/provenix/internal/providers/signer/mock"
+	
+	// Import SQLite driver for Syft
+	_ "modernc.org/sqlite"
 )
 
 // init registers all providers for E2E testing

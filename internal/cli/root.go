@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"runtime"
 	"github.com/spf13/cobra"
 )
 
@@ -13,6 +14,19 @@ var (
 	// BuildDate is set at build time via ldflags
 	BuildDate = "unknown"
 )
+
+// SetVersion sets the version information from main package
+func SetVersion(version, commit, buildTime string) {
+	if version != "" {
+		Version = version
+	}
+	if commit != "" {
+		GitCommit = commit
+	}
+	if buildTime != "" {
+		BuildDate = buildTime
+	}
+}
 
 var rootCmd = &cobra.Command{
 	Use:   "provenix",
@@ -60,6 +74,6 @@ var versionCmd = &cobra.Command{
 		fmt.Printf("provenix version %s\n", Version)
 		fmt.Printf("  commit: %s\n", GitCommit)
 		fmt.Printf("  built:  %s\n", BuildDate)
-		fmt.Printf("  go:     %s\n", "1.22+")
+		fmt.Printf("  go:     %s\n", runtime.Version())
 	},
 }
