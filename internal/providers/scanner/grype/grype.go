@@ -24,7 +24,6 @@ import (
 	"github.com/anchore/syft/syft/sbom"
 
 	scannerprovider "github.com/open-verix/provenix/internal/providers/scanner"
-	"github.com/open-verix/provenix/internal/providers"
 )
 
 // Provider implements scanner.Provider using Grype library.
@@ -261,6 +260,6 @@ func calculateHash(content string) string {
 }
 
 // init registers the Grype provider when package is imported.
-func init() {
-	providers.RegisterScannerProvider("grype", NewProvider())
-}
+// init is removed to avoid duplicate provider registration.
+// Providers are now registered manually in cmd/provenix/providers.go
+// to prevent SQLite driver conflicts.

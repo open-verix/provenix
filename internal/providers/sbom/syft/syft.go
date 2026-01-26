@@ -17,10 +17,6 @@ import (
 	syftformat "github.com/anchore/syft/syft/format"
 
 	sbomprovider "github.com/open-verix/provenix/internal/providers/sbom"
-	"github.com/open-verix/provenix/internal/providers"
-
-	// Import SQLite driver for RPM database cataloging
-	_ "modernc.org/sqlite"
 )
 
 // Provider implements sbom.Provider using Syft library.
@@ -196,6 +192,6 @@ func (p *Provider) Version() string {
 	return p.version
 }
 
-func init() {
-	providers.RegisterSBOMProvider("syft", NewProvider())
-}
+// init is removed to avoid duplicate provider registration.
+// Providers are now registered manually in cmd/provenix/providers.go
+// to prevent SQLite driver conflicts.

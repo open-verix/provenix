@@ -15,7 +15,6 @@ import (
 	signatureoptions "github.com/sigstore/sigstore/pkg/signature/options"
 
 	signerprovider "github.com/open-verix/provenix/internal/providers/signer"
-	providerspkg "github.com/open-verix/provenix/internal/providers"
 )
 
 // Provider implements signer.Provider using Cosign library.
@@ -194,9 +193,9 @@ func (p *Provider) Version() string {
 	return p.version
 }
 
-func init() {
-	providerspkg.RegisterSignerProvider("cosign", NewProvider())
-}
+// init is removed to avoid duplicate provider registration.
+// Providers are now registered manually in cmd/provenix/providers.go
+// to prevent SQLite driver conflicts.
 
 // Note: The following imports are available for future implementation:
 // - github.com/sigstore/cosign/v2/cmd/cosign/cli/sign
