@@ -6,9 +6,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/anchore/grype/grype"
+	v6 "github.com/anchore/grype/grype/db/v6"
 	"github.com/anchore/grype/grype/match"
 	"github.com/anchore/grype/grype/matcher/dotnet"
 	"github.com/anchore/grype/grype/matcher/golang"
@@ -98,17 +101,52 @@ func (p *Provider) createMatchers() []match.Matcher {
 
 // initializeVulnProvider initializes the Grype vulnerability database provider.
 func (p *Provider) initializeVulnProvider(ctx context.Context, opts scannerprovider.Options) error {
-	// Configure vulnerability database distribution and installation
-	distCfg := v6dist.Config{}
-	installCfg := v6inst.Config{}
-
-	// Load vulnerability database
-	vulnProvider, _, err := grype.LoadVulnerabilityDB(distCfg, installCfg, !opts.OfflineDB)
+	// Get user's home directory for database cache
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return fmt.Errorf("failed to load vulnerability database: %w", err)
+		return fmt.Errorf("failed to get user home directory: %w", err)
 	}
 
-	p.vulnProvider = vulnProvider
+	// Configure vulnerability database distribution and installation
+	// Use default Grype database location: ~/.cache/grype/db/
+	distCfg := v6dist.Config{
+		LatestURL: "https://toolbox-data.anchore.io/grype/databases/v6/latest.json",
+	}
+	installCfg := v6inst.Config{
+		DBRootDir:               filepath.Join(homeDir, ".cache", "grype", "db"),
+		ValidateAge:             true,
+		ValidateChecksum:        true,
+		MaxAllowedBuiltAge:      time.Hour * 24 * 5, // 5 days
+		UpdateCheckMaxFrequency: 2 * time.Hour,       // 2 hours
+	}
+
+	// Create distribution client and curator
+	client, err := v6dist.NewClient(distCfg)
+	if err != nil {
+		return fmt.Errorf("failed to create distribution client: %w", err)
+	}
+
+	curator, err := v6inst.NewCurator(installCfg, client)
+	if err != nil {
+		return fmt.Errorf("failed to create curator: %w", err)
+	}
+
+	// Try to update/download the database
+	if !opts.OfflineDB {
+		_, err = curator.Update()
+		if err != nil {
+			return fmt.Errorf("failed to update vulnerability database: %w", err)
+		}
+	}
+
+	// Get the reader
+	reader, err := curator.Reader()
+	if err != nil {
+		return fmt.Errorf("failed to get database reader: %w", err)
+	}
+
+	// Create vulnerability provider
+	p.vulnProvider = v6.NewVulnerabilityProvider(reader)
 	return nil
 }
 

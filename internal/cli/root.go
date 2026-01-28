@@ -60,11 +60,13 @@ func Execute() error {
 
 func init() {
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(attestCmd)
 	rootCmd.AddCommand(sbomCmd)
 	rootCmd.AddCommand(scanCmd)
 	rootCmd.AddCommand(publishCmd)
 	rootCmd.AddCommand(verifyCmd)
+	rootCmd.AddCommand(reportCmd)
 }
 
 var versionCmd = &cobra.Command{
