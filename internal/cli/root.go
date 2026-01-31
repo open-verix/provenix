@@ -67,6 +67,7 @@ func init() {
 	rootCmd.AddCommand(publishCmd)
 	rootCmd.AddCommand(verifyCmd)
 	rootCmd.AddCommand(reportCmd)
+	rootCmd.AddCommand(vexCmd)
 }
 
 var versionCmd = &cobra.Command{

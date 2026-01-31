@@ -1,0 +1,9 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://provenix.dev/vex/02ca8002a376a7fececc48e98b62c8ef09ba64233e63bcc36601fdc3b4fd6c6f",
+  "author": "Provenix",
+  "timestamp": "2026-01-31T10:00:42+09:00",
+  "version": "1",
+  "tooling": "Provenix dev (Grype 0.104.4)",
+  "statements": []
+}
