@@ -50,7 +50,7 @@ Exit Codes:
 Documentation: https://github.com/open-verix/provenix/docs
 `,
 	SilenceUsage:  true,
-	SilenceErrors: true,
+	SilenceErrors: false,
 }
 
 // Execute runs the root command
@@ -68,6 +68,7 @@ func init() {
 	rootCmd.AddCommand(verifyCmd)
 	rootCmd.AddCommand(reportCmd)
 	rootCmd.AddCommand(vexCmd)
+	rootCmd.AddCommand(policyCmd)
 }
 
 var versionCmd = &cobra.Command{
