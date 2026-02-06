@@ -106,9 +106,13 @@ func runAttest(cmd *cobra.Command, args []string) error {
 		cfg.Signing.Key.Path = keyPath
 		cfg.Signing.Mode = "key"
 	}
-	// Note: SkipTransparency is controlled via Rekor URL (empty = skip)
-	if localMode {
+	// Local mode: skip Rekor transparency log
+	if localMode && cfg.Signing.Mode != "key" {
+		// In keyless mode with --local, still use keyless but skip Rekor
 		cfg.Rekor.URL = "" // Empty URL means skip transparency log
+	} else if localMode && cfg.Signing.Mode == "key" {
+		// In key mode with --local, also skip Rekor
+		cfg.Rekor.URL = ""
 	}
 	
 	// Validate configuration
@@ -157,7 +161,9 @@ func runAttest(cmd *cobra.Command, args []string) error {
 			KeyPath:          cfg.Signing.Key.Path,
 			FulcioURL:        cfg.Signing.OIDC.FulcioURL,
 			RekorURL:         cfg.Rekor.URL,
+			OIDCClientID:     "sigstore",
 			SkipTransparency: cfg.Rekor.URL == "",
+			Local:            localMode,
 		},
 		GeneratorVersion: Version,
 	}

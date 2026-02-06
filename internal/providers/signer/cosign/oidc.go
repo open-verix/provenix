@@ -54,9 +54,10 @@ func (p *OIDCTokenProvider) GetToken(ctx context.Context) (string, error) {
 	}
 
 	// Fallback to Cosign's built-in provider (supports multiple backends)
+	// This will fail if no providers are enabled (non-CI environment)
 	token, err := providers.Provide(ctx, p.clientID)
 	if err != nil {
-		return "", fmt.Errorf("failed to obtain OIDC token: %w", err)
+		return "", fmt.Errorf("no OIDC token available: not in CI/CD environment and no SIGSTORE_ID_TOKEN set. Use --key for local development: %w", err)
 	}
 
 	return token, nil
