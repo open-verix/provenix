@@ -6,10 +6,12 @@ require (
 	github.com/anchore/grype v0.104.4
 	github.com/anchore/stereoscope v0.1.17
 	github.com/anchore/syft v1.40.0
+	github.com/google/cel-go v0.26.1
 	github.com/sigstore/cosign/v2 v2.6.2
 	github.com/sigstore/sigstore v1.10.3
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
+	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.42.2
 )
 
@@ -60,6 +62,7 @@ require (
 	github.com/anchore/go-version v1.2.2-0.20210903204242-51efa5b487c4 // indirect
 	github.com/anchore/packageurl-go v0.1.1-0.20250220190351-d62adb6e1115 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
+	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/aquasecurity/go-pep440-version v0.0.1 // indirect
 	github.com/aquasecurity/go-version v0.0.1 // indirect
@@ -312,6 +315,7 @@ require (
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
+	github.com/stoewer/go-strcase v1.3.1 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/sylabs/sif/v2 v2.22.0 // indirect
 	github.com/sylabs/squashfs v1.0.6 // indirect
@@ -374,7 +378,6 @@ require (
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gorm.io/gorm v1.31.1 // indirect
 	k8s.io/api v0.34.1 // indirect
 	k8s.io/apimachinery v0.34.1 // indirect

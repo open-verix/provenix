@@ -103,13 +103,19 @@ type SigningPolicy struct {
 
 // CustomPolicy defines custom policy rules.
 type CustomPolicy struct {
-	// OPAEnabled enables Open Policy Agent integration
+	// CELEnabled enables CEL (Common Expression Language) integration
+	CELEnabled bool `yaml:"cel_enabled,omitempty"`
+
+	// CELExpressions is a list of CEL expressions to evaluate
+	CELExpressions []CELExpression `yaml:"cel_expressions,omitempty"`
+
+	// OPAEnabled enables Open Policy Agent integration (future)
 	OPAEnabled bool `yaml:"opa_enabled,omitempty"`
 
-	// PolicyFiles is a list of Rego policy files
+	// PolicyFiles is a list of Rego policy files (future)
 	PolicyFiles []string `yaml:"policy_files,omitempty"`
 
-	// EntryPoint is the OPA policy entrypoint
+	// EntryPoint is the OPA policy entrypoint (future)
 	// Default: "data.provenix.allow"
 	EntryPoint string `yaml:"entry_point,omitempty"`
 }
@@ -154,9 +160,11 @@ func DefaultConfig() *Config {
 			AllowedSubjects: []string{},
 		},
 		Custom: &CustomPolicy{
-			OPAEnabled:  false,
-			PolicyFiles: []string{},
-			EntryPoint:  "data.provenix.allow",
+			CELEnabled:     false,
+			CELExpressions: []CELExpression{},
+			OPAEnabled:     false,
+			PolicyFiles:    []string{},
+			EntryPoint:     "data.provenix.allow",
 		},
 	}
 }

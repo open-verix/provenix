@@ -1,0 +1,49 @@
+version: v1
+
+# Standard policies
+vulnerability:
+  enabled: true
+  max_critical: 0
+  max_high: 10
+  max_medium: 50
+  ignore_unfixed: false
+
+license:
+  enabled: true
+  allowed:
+    - MIT
+    - Apache-2.0
+    - BSD-3-Clause
+  denied:
+    - GPL-3.0
+
+sbom:
+  enabled: true
+  formats:
+    - cyclonedx-json
+    - spdx-json
+
+# Custom CEL policies
+custom:
+  cel_enabled: true
+  cel_expressions:
+    # Example 1: No unfixed critical vulnerabilities
+    - name: no-unfixed-critical
+      expr: |
+        input.vulnerabilities.filter(v, 
+          v.severity == 'Critical' && v.fixed_version == ''
+        ).size() == 0
+      message: "Unfixed critical vulnerabilities found - please update dependencies"
+
+    # Example 2: Limit high vulnerabilities in production
+    - name: production-high-limit
+      expr: |
+        !input.artifact.contains('prod') ||
+        input.vulnerabilities.filter(v, v.severity == 'High').size() <= 5
+      message: "Production images cannot have more than 5 high vulnerabilities"
+
+    # Example 3: Enforce semantic versioning
+    - name: semver-required
+      expr: |
+        input.artifact.matches('^[^:]+:v?[0-9]+\\.[0-9]+\\.[0-9]+')
+      message: "Artifact must use semantic versioning (e.g., myapp:v1.2.3)"

@@ -54,6 +54,22 @@ func (e *Engine) Evaluate(ctx context.Context, ev *evidence.Evidence) (*Result, 
 		result.Warnings = append(result.Warnings, warnings...)
 	}
 
+	// Evaluate custom CEL policies
+	if e.config.Custom != nil && e.config.Custom.CELEnabled {
+		violations, warnings, err := e.evaluateCustomCEL(ctx, ev)
+		if err != nil {
+			// CEL evaluation failure is treated as a violation
+			result.Violations = append(result.Violations, Violation{
+				Type:     ViolationTypeCustom,
+				Severity: SeverityHigh,
+				Message:  fmt.Sprintf("Custom CEL policy evaluation failed: %v", err),
+			})
+		} else {
+			result.Violations = append(result.Violations, violations...)
+			result.Warnings = append(result.Warnings, warnings...)
+		}
+	}
+
 	// Set overall pass/fail
 	if len(result.Violations) > 0 {
 		result.Passed = false
@@ -232,6 +248,100 @@ func (e *Engine) evaluateSBOM(ev *evidence.Evidence) ([]Violation, []Warning) {
 	}
 
 	return violations, warnings
+}
+
+// evaluateCustomCEL evaluates custom CEL policies.
+func (e *Engine) evaluateCustomCEL(ctx context.Context, ev *evidence.Evidence) ([]Violation, []Warning, error) {
+	var violations []Violation
+	var warnings []Warning
+
+	if e.config.Custom == nil || !e.config.Custom.CELEnabled {
+		return violations, warnings, nil
+	}
+
+	if len(e.config.Custom.CELExpressions) == 0 {
+		return violations, warnings, fmt.Errorf("CEL enabled but no expressions specified")
+	}
+
+	// Create CEL evaluator
+	evaluator, err := NewCELEvaluator(e.config.Custom.CELExpressions)
+	if err != nil {
+		return violations, warnings, fmt.Errorf("failed to create CEL evaluator: %w", err)
+	}
+
+	// Convert evidence to map for CEL input
+	input := evidenceToMap(ev)
+
+	// Evaluate all expressions
+	results, err := evaluator.Evaluate(ctx, input)
+	if err != nil {
+		return violations, warnings, fmt.Errorf("CEL evaluation failed: %w", err)
+	}
+
+	// Check results and create violations for failed expressions
+	for _, expr := range e.config.Custom.CELExpressions {
+		passed, exists := results[expr.Name]
+		if !exists {
+			continue // Should not happen, but skip if missing
+		}
+
+		if !passed {
+			// Expression evaluated to false - create violation
+			message := expr.Message
+			if message == "" {
+				message = fmt.Sprintf("CEL policy '%s' failed", expr.Name)
+			}
+
+			violations = append(violations, Violation{
+				Type:     ViolationTypeCustom,
+				Severity: SeverityHigh,
+				Message:  message,
+				Details: map[string]interface{}{
+					"expression": expr.Name,
+					"cel_expr":   expr.Expr,
+				},
+			})
+		}
+	}
+
+	return violations, warnings, nil
+}
+
+// evidenceToMap converts Evidence to a map for CEL evaluation.
+// This provides a structured view of evidence data.
+func evidenceToMap(ev *evidence.Evidence) map[string]interface{} {
+	result := make(map[string]interface{})
+
+	// Add artifact info
+	result["artifact"] = ev.Artifact
+
+	// Add SBOM data
+	if ev.SBOM != nil {
+		sbomData := map[string]interface{}{
+			"format":   string(ev.SBOM.Format),
+			"checksum": ev.SBOM.Checksum,
+		}
+		result["sbom"] = sbomData
+	}
+
+	// Add vulnerability data
+	if ev.VulnerabilityReport != nil {
+		vulns := make([]map[string]interface{}, 0, len(ev.VulnerabilityReport.Vulnerabilities))
+		for _, v := range ev.VulnerabilityReport.Vulnerabilities {
+			vulns = append(vulns, map[string]interface{}{
+				"id":            v.ID,
+				"severity":      string(v.Severity),
+				"package":       v.Package,
+				"version":       v.Version,
+				"fixed_version": v.FixedVersion,
+				"description":   v.Description,
+			})
+		}
+		result["vulnerabilities"] = vulns
+		result["vulnerability_count"] = len(vulns)
+	}
+
+	return result
 }
 
 // Result represents the outcome of policy evaluation.
