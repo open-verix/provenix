@@ -2,15 +2,20 @@ package cosign
 
 import (
 	"context"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"os"
 	"time"
 
 	"github.com/sigstore/cosign/v2/pkg/cosign"
-	"github.com/sigstore/cosign/v2/pkg/signature"
+	cosignsig "github.com/sigstore/cosign/v2/pkg/signature"
+	"github.com/sigstore/sigstore/pkg/signature"
 	signatureoptions "github.com/sigstore/sigstore/pkg/signature/options"
 
 	signerprovider "github.com/open-verix/provenix/internal/providers/signer"
@@ -154,14 +159,61 @@ func (p *Provider) signWithKey(ctx context.Context, statement *signerprovider.St
 		return nil, fmt.Errorf("key path required for key-based signing")
 	}
 
-	// Load signer using SignerFromKeyRef
-	signer, err := signature.SignerFromKeyRef(ctx, opts.KeyPath, cosign.PassFunc(func(bool) ([]byte, error) {
-		return []byte{}, nil // No passphrase for MVP
-	}))
+	// Read key file
+	keyBytes, err := os.ReadFile(opts.KeyPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load signer: %w", err)
+		return nil, fmt.Errorf("failed to read key file: %w", err)
 	}
 
+	// Parse PEM block
+	block, _ := pem.Decode(keyBytes)
+	if block == nil {
+		return nil, fmt.Errorf("failed to decode PEM block from key file")
+	}
+
+	// Try to parse as EC private key or PKCS#8
+	var privateKey *ecdsa.PrivateKey
+	
+	if block.Type == "EC PRIVATE KEY" {
+		privateKey, err = x509.ParseECPrivateKey(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse EC private key: %w", err)
+		}
+	} else if block.Type == "PRIVATE KEY" {
+		// PKCS#8 format
+		key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse PKCS#8 private key: %w", err)
+		}
+		var ok bool
+		privateKey, ok = key.(*ecdsa.PrivateKey)
+		if !ok {
+			return nil, fmt.Errorf("key is not an ECDSA private key")
+		}
+	} else {
+		// Try using Cosign's SignerFromKeyRef for encrypted keys
+		signer, err := cosignsig.SignerFromKeyRef(ctx, opts.KeyPath, cosign.PassFunc(func(bool) ([]byte, error) {
+			return []byte{}, nil // No passphrase
+		}))
+		if err != nil {
+			return nil, fmt.Errorf("failed to load signer (unsupported key format): %w", err)
+		}
+		
+		// Sign using Cosign signer
+		return p.signWithCosignSigner(ctx, statement, payload, signer)
+	}
+
+	// Create signature using ECDSA key
+	signer, err := signature.LoadECDSASignerVerifier(privateKey, crypto.SHA256)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create signer: %w", err)
+	}
+
+	return p.signWithCosignSigner(ctx, statement, payload, signer)
+}
+
+// signWithCosignSigner signs using a Cosign signer interface.
+func (p *Provider) signWithCosignSigner(ctx context.Context, statement *signerprovider.Statement, payload []byte, signer signature.Signer) (*signerprovider.Signature, error) {
 	// Sign the payload
 	var payloadReader io.Reader = &readerWrapper{data: payload}
 	signatureBytes, err := signer.SignMessage(payloadReader, signatureoptions.WithContext(ctx))
@@ -175,26 +227,25 @@ func (p *Provider) signWithKey(ctx context.Context, statement *signerprovider.St
 		return nil, fmt.Errorf("failed to get public key: %w", err)
 	}
 
-	// Read original key for PEM encoding (simplified for MVP)
-	keyBytes, err := os.ReadFile(opts.KeyPath)
+	// Marshal public key to PEM
+	publicKeyBytes, err := x509.MarshalPKIXPublicKey(publicKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read key file: %w", err)
+		return nil, fmt.Errorf("failed to marshal public key: %w", err)
 	}
 
-	// Use key bytes as-is for MVP (assuming PEM format)
-	publicKeyPEM := string(keyBytes)
+	publicKeyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: publicKeyBytes,
+	})
 
 	sig := &signerprovider.Signature{
 		Statement:      statement,
 		Signature:      base64.StdEncoding.EncodeToString(signatureBytes),
-		PublicKey:      publicKeyPEM,
+		PublicKey:      string(publicKeyPEM),
 		SignedAt:       time.Now().UTC(),
 		SignerProvider: p.Name(),
 		SignerVersion:  p.Version(),
 	}
-
-	// Skip Rekor for MVP key-based signing
-	_ = publicKey // Used in full implementation
 
 	return sig, nil
 }
