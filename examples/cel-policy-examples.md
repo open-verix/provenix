@@ -60,6 +60,7 @@ custom:
 ```
 
 **How it works:**
+
 1. `input.vulnerabilities` - access vulnerability array
 2. `.filter(v, v.severity == 'Critical')` - keep only critical vulns
 3. `.size() == 0` - ensure filtered list is empty
@@ -101,6 +102,7 @@ custom:
 ```
 
 **Logic:**
+
 - `v.fixed_version == ''` - no fix available
 - Combined with `v.severity == 'Critical'` - critical AND unfixed
 
@@ -182,6 +184,7 @@ custom:
 ```
 
 **Regex explanation:**
+
 - `^[^:]+:` - image name followed by `:`
 - `v?` - optional `v` prefix
 - `[0-9]+\\.[0-9]+\\.[0-9]+` - three dot-separated numbers
@@ -215,6 +218,7 @@ custom:
 ```
 
 **Logic pattern:**
+
 - `!condition || check` - "if condition, then check must pass"
 - If artifact doesn't match, expression returns `true` (passes)
 
@@ -261,6 +265,7 @@ custom:
 ```
 
 **Combines:**
+
 - Zero critical vulnerabilities
 - Max 2 high vulnerabilities
 - CycloneDX SBOM format
@@ -272,37 +277,38 @@ custom:
 
 ### Operators
 
-| Operator | Example | Description |
-|----------|---------|-------------|
-| `==` | `v.severity == 'High'` | Equality |
-| `!=` | `v.fixed_version != ''` | Inequality |
-| `>`, `<`, `>=`, `<=` | `v.score > 7.5` | Comparison |
-| `&&`, `\|\|` | `v.severity == 'High' && v.package == 'nginx'` | Logical AND/OR |
-| `!` | `!input.artifact.contains('test')` | Logical NOT |
+| Operator             | Example                                        | Description    |
+| -------------------- | ---------------------------------------------- | -------------- |
+| `==`                 | `v.severity == 'High'`                         | Equality       |
+| `!=`                 | `v.fixed_version != ''`                        | Inequality     |
+| `>`, `<`, `>=`, `<=` | `v.score > 7.5`                                | Comparison     |
+| `&&`, `\|\|`         | `v.severity == 'High' && v.package == 'nginx'` | Logical AND/OR |
+| `!`                  | `!input.artifact.contains('test')`             | Logical NOT    |
 
 ### String Methods
 
-| Method | Example | Description |
-|--------|---------|-------------|
-| `.contains(s)` | `input.artifact.contains('prod')` | Substring check |
-| `.startsWith(s)` | `v.id.startsWith('CVE-')` | Prefix check |
-| `.endsWith(s)` | `v.package.endsWith('.so')` | Suffix check |
-| `.matches(regex)` | `input.artifact.matches(r':\\d+\\.\\d+')` | Regex match |
+| Method            | Example                                   | Description     |
+| ----------------- | ----------------------------------------- | --------------- |
+| `.contains(s)`    | `input.artifact.contains('prod')`         | Substring check |
+| `.startsWith(s)`  | `v.id.startsWith('CVE-')`                 | Prefix check    |
+| `.endsWith(s)`    | `v.package.endsWith('.so')`               | Suffix check    |
+| `.matches(regex)` | `input.artifact.matches(r':\\d+\\.\\d+')` | Regex match     |
 
 ### List Methods
 
-| Method | Example | Description |
-|--------|---------|-------------|
-| `.size()` | `input.vulnerabilities.size()` | Get list length |
-| `.filter(v, expr)` | `list.filter(v, v.severity == 'High')` | Filter items |
-| `.exists(v, expr)` | `list.exists(v, v.id == 'CVE-123')` | Check existence |
-| `.all(v, expr)` | `list.all(v, v.severity != 'Critical')` | All items match |
+| Method             | Example                                 | Description     |
+| ------------------ | --------------------------------------- | --------------- |
+| `.size()`          | `input.vulnerabilities.size()`          | Get list length |
+| `.filter(v, expr)` | `list.filter(v, v.severity == 'High')`  | Filter items    |
+| `.exists(v, expr)` | `list.exists(v, v.id == 'CVE-123')`     | Check existence |
+| `.all(v, expr)`    | `list.all(v, v.severity != 'Critical')` | All items match |
 
 ---
 
 ## Best Practices
 
 ### 1. Use Descriptive Names
+
 ```yaml
 # ❌ BAD
 - name: check1
@@ -314,6 +320,7 @@ custom:
 ```
 
 ### 2. Add Clear Messages
+
 ```yaml
 # ❌ BAD
 message: "Failed"
@@ -323,27 +330,30 @@ message: "Critical vulnerabilities found: deployment blocked per security policy
 ```
 
 ### 3. Test Incrementally
+
 Start with simple expressions, test, then add complexity:
+
 ```yaml
 # Step 1: Test basic filtering
 expr: input.vulnerabilities.filter(v, v.severity == 'Critical').size() == 0
 
 # Step 2: Add package filter
 expr: |
-  input.vulnerabilities.filter(v, 
+  input.vulnerabilities.filter(v,
     v.severity == 'Critical' && v.package == 'openssl'
   ).size() == 0
 
 # Step 3: Add fix availability check
 expr: |
   input.vulnerabilities.filter(v,
-    v.severity == 'Critical' && 
-    v.package == 'openssl' && 
+    v.severity == 'Critical' &&
+    v.package == 'openssl' &&
     v.fixed_version == ''
   ).size() == 0
 ```
 
 ### 4. Use Multi-Line for Readability
+
 ```yaml
 # ❌ HARD TO READ
 expr: input.vulnerabilities.filter(v, v.severity == 'Critical' && v.fixed_version == '').size() == 0
@@ -351,7 +361,7 @@ expr: input.vulnerabilities.filter(v, v.severity == 'Critical' && v.fixed_versio
 # ✅ EASY TO READ
 expr: |
   input.vulnerabilities.filter(v,
-    v.severity == 'Critical' && 
+    v.severity == 'Critical' &&
     v.fixed_version == ''
   ).size() == 0
 ```
@@ -385,12 +395,14 @@ provenix policy check --policy provenix.yaml --evidence attestation.json
 ### Expected Output
 
 **Pass:**
+
 ```
 ✅ Policy evaluation passed
 - No violations detected
 ```
 
 **Fail:**
+
 ```
 ❌ Policy evaluation failed
 
@@ -405,6 +417,7 @@ Violations:
 ## Common Patterns
 
 ### Pattern 1: Allowlist
+
 ```yaml
 # Allow only specific packages
 - name: allowed-packages
@@ -416,6 +429,7 @@ Violations:
 ```
 
 ### Pattern 2: Blocklist
+
 ```yaml
 # Block specific vulnerable packages
 - name: block-log4j
@@ -427,6 +441,7 @@ Violations:
 ```
 
 ### Pattern 3: Conditional Check
+
 ```yaml
 # Check only if artifact matches pattern
 - name: prod-strict-check
@@ -442,27 +457,32 @@ Violations:
 ## Debugging Tips
 
 ### 1. Validate Expression Syntax
+
 Use `provenix policy validate`:
+
 ```bash
 provenix policy validate --policy provenix.yaml
 ```
 
 ### 2. Check Compilation Errors
+
 If expression fails to compile:
+
 ```
-Error: failed to compile CEL expression 'no-critical': 
+Error: failed to compile CEL expression 'no-critical':
   ERROR: <input>:2:5: undeclared reference to 'vuln'
 ```
+
 **Fix:** Use correct variable names (`v` not `vuln`).
 
 ### 3. Test with Sample Data
+
 Create minimal test evidence:
+
 ```json
 {
   "artifact": "test:latest",
-  "vulnerabilities": [
-    {"severity": "Critical", "id": "CVE-TEST"}
-  ]
+  "vulnerabilities": [{ "severity": "Critical", "id": "CVE-TEST" }]
 }
 ```
 
@@ -473,11 +493,13 @@ Create minimal test evidence:
 If you plan to add OPA support later, CEL expressions can be converted:
 
 **CEL:**
+
 ```yaml
 expr: input.vulnerabilities.filter(v, v.severity == 'Critical').size() == 0
 ```
 
 **OPA Rego equivalent:**
+
 ```rego
 deny[msg] {
     critical := [v | v := input.vulnerabilities[_]; v.severity == "Critical"]
@@ -495,6 +517,7 @@ deny[msg] {
 - **Use exists() when possible:** Faster than `.filter().size() > 0`
 
 **❌ SLOW:**
+
 ```yaml
 expr: |
   input.vulnerabilities.filter(v, v.severity == 'Critical').size() > 0 &&
@@ -502,6 +525,7 @@ expr: |
 ```
 
 **✅ FAST:**
+
 ```yaml
 expr: |
   input.vulnerabilities.exists(v, 

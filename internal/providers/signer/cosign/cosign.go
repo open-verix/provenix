@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/sigstore/cosign/v2/pkg/cosign"
-	"github.com/sigstore/cosign/v2/pkg/providers"
 	"github.com/sigstore/cosign/v2/pkg/signature"
 	signatureoptions "github.com/sigstore/sigstore/pkg/signature/options"
 
@@ -74,26 +73,79 @@ func (p *Provider) Sign(ctx context.Context, statement *signerprovider.Statement
 
 // signKeyless performs keyless signing using OIDC and Fulcio.
 func (p *Provider) signKeyless(ctx context.Context, statement *signerprovider.Statement, payload []byte, opts signerprovider.Options) (*signerprovider.Signature, error) {
-	// Get OIDC token from environment
-	idToken, err := providers.Provide(ctx, opts.OIDCClientID)
+	// Step 1: Get OIDC token from CI/CD environment
+	oidcProvider := NewOIDCTokenProvider(opts.OIDCClientID)
+	idToken, err := oidcProvider.GetToken(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get OIDC token: %w", err)
+		return nil, fmt.Errorf("failed to obtain OIDC token: %w", err)
 	}
 
-	// For MVP: Simplified keyless signing
-	// Full implementation requires Fulcio client integration
-	// TODO: Implement full Fulcio/Rekor integration (Phase 2)
-	
+	// Step 2: Create Fulcio client for keyless signing
+	fulcioClient := NewFulcioClient(opts.FulcioURL, opts.RekorURL)
+
+	// Step 3: Perform keyless signing (ephemeral key + Fulcio cert + Rekor)
+	publishRekor := !opts.Local // Skip Rekor in local mode
+	keylessSig, err := fulcioClient.SignKeyless(ctx, payload, idToken, publishRekor)
+	if err != nil {
+		// Check if this is a Rekor-only failure (partial success)
+		if isRekorPublishError(err) {
+			// Keyless signature succeeded, but Rekor publishing failed
+			// Return signature with warning (caller can handle exit code 2)
+			sig := &signerprovider.Signature{
+				Statement:         statement,
+				Signature:         keylessSig.Signature,
+				Certificate:       keylessSig.Certificate,
+				CertificateChain:  keylessSig.CertificateChain,
+				PublicKey:         keylessSig.PublicKey,
+				SignedAt:          time.Now().UTC(),
+				SignerProvider:    p.Name(),
+				SignerVersion:     p.Version(),
+				RekorEntry:        "", // Empty indicates publishing failed
+				RekorPublishError: err.Error(),
+			}
+			return sig, fmt.Errorf("signature created but Rekor publishing failed: %w", err)
+		}
+		return nil, fmt.Errorf("keyless signing failed: %w", err)
+	}
+
+	// Step 4: Create complete signature
 	sig := &signerprovider.Signature{
-		Statement:      statement,
-		Signature:      base64.StdEncoding.EncodeToString([]byte("keyless-signature-" + idToken[:20])),
-		SignedAt:       time.Now().UTC(),
-		SignerProvider: p.Name(),
-		SignerVersion:  p.Version(),
-		RekorEntry:     "https://rekor.sigstore.dev/api/v1/log/entries/pending",
+		Statement:        statement,
+		Signature:        keylessSig.Signature,
+		Certificate:      keylessSig.Certificate,
+		CertificateChain: keylessSig.CertificateChain,
+		PublicKey:        keylessSig.PublicKey,
+		SignedAt:         time.Now().UTC(),
+		SignerProvider:   p.Name(),
+		SignerVersion:    p.Version(),
+		RekorEntry:       keylessSig.RekorEntry,
+		RekorLogIndex:    keylessSig.RekorLogIndex,
 	}
 
 	return sig, nil
+}
+
+// isRekorPublishError checks if an error is specifically a Rekor publishing failure.
+func isRekorPublishError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Check error message for Rekor-specific failures
+	msg := err.Error()
+	return contains(msg, "Rekor publishing failed") || contains(msg, "rekor")
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && findSubstring(s, substr)
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
 
 // signWithKey performs signing with a local private key.

@@ -53,14 +53,23 @@ type Signature struct {
 	// Certificate is the signing certificate (for keyless mode)
 	Certificate string `json:"certificate,omitempty"`
 	
-	// Chain is the certificate chain (for keyless mode)
+	// CertificateChain is the full certificate chain (for keyless mode)
+	CertificateChain string `json:"certificate_chain,omitempty"`
+	
+	// Chain is the certificate chain (for keyless mode, backwards compat)
 	Chain []string `json:"chain,omitempty"`
 	
 	// PublicKey is the public key (for key mode)
 	PublicKey string `json:"public_key,omitempty"`
 	
-	// RekorEntry is the Rekor transparency log entry URL
+	// RekorEntry is the Rekor transparency log entry UUID
 	RekorEntry string `json:"rekor_entry,omitempty"`
+	
+	// RekorLogIndex is the log index in Rekor
+	RekorLogIndex int64 `json:"rekor_log_index,omitempty"`
+	
+	// RekorPublishError indicates Rekor publishing failed (partial success)
+	RekorPublishError string `json:"rekor_publish_error,omitempty"`
 	
 	// SignedAt is the timestamp when the signature was created
 	SignedAt time.Time `json:"signed_at"`
@@ -94,6 +103,9 @@ type Options struct {
 	
 	// SkipTransparency skips publishing to Rekor (air-gapped mode)
 	SkipTransparency bool
+	
+	// Local indicates local-only mode (no Rekor publishing)
+	Local bool
 }
 
 // DefaultOptions returns the default signing options.
