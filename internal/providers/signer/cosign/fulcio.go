@@ -108,7 +108,8 @@ func (c *FulcioClient) SignKeyless(ctx context.Context, payload []byte, idToken 
 
 	// Step 5: Publish to Rekor (optional)
 	if publishRekor {
-		rekorUUID, logIndex, err := c.publishToRekor(ctx, payload, signatureBytes, certPEM)
+		rekorClient := NewRekorClient(c.rekorURL)
+		rekorUUID, logIndex, err := rekorClient.CreateHashedRekordEntry(ctx, payload, signatureBytes, certPEM)
 		if err != nil {
 			// Don't fail entire signing if Rekor is unavailable
 			// This allows graceful degradation (exit code 2)
@@ -305,30 +306,6 @@ func (c *FulcioClient) validateCertificate(certPEM []byte, expectedPubKey interf
 
 	// Certificate is valid
 	return nil
-}
-
-// publishToRekor uploads signature and certificate to Rekor transparency log.
-//
-// For MVP Phase 1 (Week 11-12): Simplified stub implementation
-// Full implementation in Phase 2 will use:
-//   - github.com/sigstore/rekor/pkg/client
-//   - Proper entry type (intoto/hashedrekord)
-//   - Inclusion proof verification
-func (c *FulcioClient) publishToRekor(ctx context.Context, payload, signature, certificate []byte) (string, int64, error) {
-	// TODO: Full Rekor integration (Week 14-15)
-	// For now, return stub response
-	
-	// In production, this would:
-	// 1. Create Rekor client
-	// 2. Create entry with payload, signature, certificate
-	// 3. POST to /api/v1/log/entries
-	// 4. Wait for inclusion proof
-	// 5. Verify merkle tree inclusion
-	
-	stubUUID := "3045022100abcdef1234567890abcdef1234567890abcdef1234567890"
-	stubLogIndex := int64(12345678)
-	
-	return stubUUID, stubLogIndex, nil
 }
 
 // signWithECDSA signs a digest with an ECDSA private key.
