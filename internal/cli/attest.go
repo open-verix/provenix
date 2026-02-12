@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -229,11 +230,25 @@ func runAttest(cmd *cobra.Command, args []string) error {
 	return &ExitError{Code: 2, Err: fmt.Errorf("rekor publishing unavailable")}
 }
 
-// saveEvidence saves evidence to a JSON file.
+// saveEvidence saves evidence to a JSON file in AttestationBundle format.
 func saveEvidence(ev *evidence.Evidence, path string) error {
-	data, err := json.MarshalIndent(ev, "", "  ")
+	// Create attestation bundle for verification
+	// CRITICAL: Store statement as base64 string to preserve exact bytes
+	// json.RawMessage gets re-formatted when marshaled with indent
+	bundle := map[string]interface{}{
+		"statementBase64": base64.StdEncoding.EncodeToString(ev.Statement),
+		"signature":       ev.Signature.Signature,
+		"certificate":     ev.Signature.Certificate,
+		"publicKey":       ev.Signature.PublicKey,
+		"rekorUUID":       ev.Signature.RekorEntry,
+	}
+	if ev.Signature.RekorLogIndex > 0 {
+		bundle["rekorLogIndex"] = int(ev.Signature.RekorLogIndex)
+	}
+
+	data, err := json.MarshalIndent(bundle, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal evidence: %w", err)
+		return fmt.Errorf("failed to marshal attestation bundle: %w", err)
 	}
 	
 	if err := os.WriteFile(path, data, 0644); err != nil {
