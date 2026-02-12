@@ -200,6 +200,7 @@ func (g *Generator) signStatement(
 		Subject:       convertSubjects(stmt.Subject),
 		PredicateType: stmt.PredicateType,
 		Predicate:     predicateJSON,
+		RawJSON:       statementJSON, // Store raw JSON for verification
 	}
 
 	return g.signerProvider.Sign(ctx, signerStmt, opts)

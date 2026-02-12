@@ -52,10 +52,17 @@ func (p *Provider) Sign(ctx context.Context, statement *signerprovider.Statement
 		return nil, fmt.Errorf("statement required for signing")
 	}
 
-	// Serialize statement to JSON
-	statementBytes, err := json.Marshal(statement)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal statement: %w", err)
+	// Use the original raw JSON if available (ensures exact byte-for-byte match)
+	// Otherwise marshal the statement structure
+	var statementBytes []byte
+	var err error
+	if len(statement.RawJSON) > 0 {
+		statementBytes = statement.RawJSON
+	} else {
+		statementBytes, err = json.Marshal(statement)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal statement: %w", err)
+		}
 	}
 
 	var sig *signerprovider.Signature

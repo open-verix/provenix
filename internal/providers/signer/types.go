@@ -31,6 +31,9 @@ type Statement struct {
 	
 	// Predicate contains the actual attestation content
 	Predicate json.RawMessage `json:"predicate"`
+
+	// RawJSON contains the raw JSON bytes of the statement (for verification)
+	RawJSON json.RawMessage `json:"-"`
 }
 
 // Subject identifies an artifact in an attestation.
@@ -64,6 +67,9 @@ type Signature struct {
 	
 	// RekorEntry is the Rekor transparency log entry UUID
 	RekorEntry string `json:"rekor_entry,omitempty"`
+	
+	// RekorUUID is an alias for RekorEntry (for compatibility)
+	RekorUUID string `json:"rekor_uuid,omitempty"`
 	
 	// RekorLogIndex is the log index in Rekor
 	RekorLogIndex int64 `json:"rekor_log_index,omitempty"`

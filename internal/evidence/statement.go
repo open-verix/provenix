@@ -135,8 +135,10 @@ func CreateStatement(
 		Predicate:     predicate,
 	}
 
-	// Marshal to JSON
-	statementJSON, err := json.MarshalIndent(statement, "", "  ")
+	// Marshal to compact JSON (no indentation)
+	// CRITICAL: Use Marshal (not MarshalIndent) for signature verification
+	// The exact bytes must match when verifying the signature
+	statementJSON, err := json.Marshal(statement)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal statement: %w", err)
 	}
