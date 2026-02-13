@@ -22,6 +22,14 @@ func (e *ExitError) Error() string {
 	return ""
 }
 
+// NewExitError creates a new ExitError with the given code and message.
+func NewExitError(code int, message string) *ExitError {
+	return &ExitError{
+		Code: code,
+		Err:  fmt.Errorf(message),
+	}
+}
+
 // Exit codes following Provenix's Atomic Evidence Failure Model.
 // See docs/atomic_evidence_failure_model.md for detailed semantics.
 const (
