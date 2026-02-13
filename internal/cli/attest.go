@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -68,7 +70,7 @@ Supported Artifacts:
 
 func init() {
 	attestCmd.Flags().Bool("local", false, "Local-only mode (no Rekor publishing)")
-	attestCmd.Flags().StringP("output", "o", "attestation.json", "Output file path")
+	attestCmd.Flags().StringP("output", "o", "", "Output file path (default: .provenix/attestations/sha256-{digest}.json)")
 	attestCmd.Flags().String("format", "cyclonedx-json", "SBOM format (cyclonedx-json, spdx-json, syft-json)")
 	attestCmd.Flags().String("config", "", "Path to provenix.yaml configuration file")
 	attestCmd.Flags().String("key", "", "Path to private key (for development)")
@@ -190,12 +192,13 @@ func runAttest(cmd *cobra.Command, args []string) error {
 	fmt.Printf("🔏 Signature created (provider: %s)\n", 
 		ev.Signature.SignerProvider)
 	
-	// Save attestation
-	if err := saveEvidence(ev, outputPath); err != nil {
+	// Determine save path and save attestation
+	savePath, err := saveEvidenceWithFallback(ev, outputPath)
+	if err != nil {
 		return fmt.Errorf("failed to save attestation: %w", err)
 	}
-    
-	fmt.Printf("💾 Attestation saved to: %s\n", outputPath)
+	
+	fmt.Printf("💾 Attestation saved to: %s\n", savePath)
 	
 	// Summary
 	fmt.Println("\n📊 Summary:")
@@ -211,23 +214,38 @@ func runAttest(cmd *cobra.Command, args []string) error {
 		// Policy-controlled behavior; we do not change exit code here yet
 	}
 
-	// Exit code semantics
-	// 0: signed and published to Rekor
-	// 2: partial success (saved locally, Rekor unavailable)
-	// Local mode (skip transparency) is considered success
-	skipTransparency := cfg.Rekor.URL == "" || opts.SignOptions.SkipTransparency
+	// Exit code semantics:
+	// 0: Complete success (signed and published to Rekor, or local mode)
+	// 2: Partial success (signed but Rekor unavailable)
+	// 1: Fatal error (handled by error return)
+	
+	skipTransparency := cfg.Rekor.URL == "" || opts.SignOptions.SkipTransparency || localMode
+	
 	if skipTransparency {
-		fmt.Println("🌐 Transparency: skipped (local mode)")
+		fmt.Println("\n🌐 Transparency: skipped (local mode)")
+		fmt.Printf("\n✅ Attestation complete (exit code: %d)\n", ExitSuccess)
 		return nil
 	}
 
+	// Check Rekor publishing status
 	if ev.Signature != nil && ev.Signature.RekorEntry != "" {
-		fmt.Printf("🌐 Published to Rekor: %s\n", ev.Signature.RekorEntry)
+		fmt.Printf("\n🌐 Published to Rekor: %s\n", ev.Signature.RekorEntry)
+		if ev.Signature.RekorLogIndex > 0 {
+			fmt.Printf("   Log Index: %d\n", ev.Signature.RekorLogIndex)
+		}
+		fmt.Printf("\n✅ Attestation complete (exit code: %d)\n", ExitSuccess)
 		return nil
 	}
 
-	fmt.Println("🌐 Rekor publishing failed or unavailable; local attestation retained")
-	return &ExitError{Code: 2, Err: fmt.Errorf("rekor publishing unavailable")}
+	// Rekor publishing failed - partial success scenario
+	fmt.Println("\n⚠️  Rekor Unavailable")
+	fmt.Println("   Attestation signed and saved locally")
+	fmt.Printf("   Location: %s\n", savePath)
+	fmt.Println("\n💡 Re-publish later with:")
+	fmt.Printf("   provenix publish %s\n", savePath)
+	fmt.Printf("\n⚠️  Partial Success (exit code: %d)\n", ExitPartialSuccess)
+	
+	return &ExitError{Code: ExitPartialSuccess, Err: fmt.Errorf("rekor publishing unavailable")}
 }
 
 // saveEvidence saves evidence to a JSON file in AttestationBundle format.
@@ -278,4 +296,51 @@ func extractPackageCount(s *sbom.SBOM) int {
 	}
 	
 	return 0
+}
+
+// getDefaultAttestationPath generates the default attestation storage path.
+// Format: .provenix/attestations/sha256-{first-12-chars}.json
+func getDefaultAttestationPath(digest string) (string, error) {
+	// Create .provenix/attestations directory if it doesn't exist
+	attestDir := ".provenix/attestations"
+	if err := os.MkdirAll(attestDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create attestation directory: %w", err)
+	}
+
+	// Extract first 12 characters of digest for filename
+	digestShort := digest
+	if len(digest) > 12 {
+		// Remove "sha256:" prefix if present
+		if idx := strings.Index(digest, ":"); idx != -1 {
+			digestShort = digest[idx+1:]
+		}
+		if len(digestShort) > 12 {
+			digestShort = digestShort[:12]
+		}
+	}
+
+	filename := fmt.Sprintf("sha256-%s.json", digestShort)
+	return filepath.Join(attestDir, filename), nil
+}
+
+// saveEvidenceWithFallback saves evidence to the specified path and returns
+// whether Rekor publishing should be attempted.
+// If outputPath is empty, generates default path in .provenix/attestations/
+func saveEvidenceWithFallback(ev *evidence.Evidence, outputPath string) (string, error) {
+	// Use provided path or generate default
+	savePath := outputPath
+	if savePath == "" {
+		var err error
+		savePath, err = getDefaultAttestationPath(ev.ArtifactDigest)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	// Save the attestation
+	if err := saveEvidence(ev, savePath); err != nil {
+		return "", fmt.Errorf("failed to save attestation: %w", err)
+	}
+
+	return savePath, nil
 }
