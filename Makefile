@@ -7,10 +7,14 @@ GIT_COMMIT=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS=-ldflags "-s -w -X github.com/open-verix/provenix/internal/cli.Version=$(VERSION) -X github.com/open-verix/provenix/internal/cli.GitCommit=$(GIT_COMMIT) -X github.com/open-verix/provenix/internal/cli.BuildDate=$(BUILD_DATE)"
 
+# Enable verbose output with VERBOSE=1
+VERBOSE?=
+
 help: ## Display this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 build: ## Build the binary
+ifdef VERBOSE
 	@echo "=========================================="
 	@echo "Building $(BINARY_NAME)..."
 	@echo "Version:    $(VERSION)"
@@ -21,8 +25,12 @@ build: ## Build the binary
 	@echo "✅ Build successful: ./$(BINARY_NAME)"
 	@echo ""
 	@./$(BINARY_NAME) version 2>/dev/null || echo "Binary version: $(VERSION) ($(GIT_COMMIT))"
+else
+	@go build $(LDFLAGS) -o $(BINARY_NAME) ./cmd/provenix
+endif
 
 install: ## Install the binary to $(GOPATH)/bin
+ifdef VERBOSE
 	@echo "=========================================="
 	@echo "Installing $(BINARY_NAME)..."
 	@echo "Version:    $(VERSION)"
@@ -30,6 +38,9 @@ install: ## Install the binary to $(GOPATH)/bin
 	@go install $(LDFLAGS) ./cmd/provenix
 	@echo "✅ Installation successful"
 	@which $(BINARY_NAME)
+else
+	@go install $(LDFLAGS) ./cmd/provenix
+endif
 
 test: ## Run unit tests
 	go test -v -race -coverprofile=coverage.out ./...
@@ -91,7 +102,12 @@ build-verbose: ## Build with verbose output
 	@echo "✅ Build successful: ./$(BINARY_NAME)"
 	@ls -lh $(BINARY_NAME)
 
+build-info: ## Build with version info output (same as VERBOSE=1 make build)
+	@$(MAKE) VERBOSE=1 build
+
 quick: ## Quick build without version info
 	@go build -o $(BINARY_NAME) ./cmd/provenix && echo "✅ Quick build: ./$(BINARY_NAME)"
+
+# Removed - 'build' is now quiet by default, use 'build-info' or VERBOSE=1 for output
 
 .DEFAULT_GOAL := help
