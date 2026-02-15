@@ -11,12 +11,25 @@ help: ## Display this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 build: ## Build the binary
+	@echo "=========================================="
 	@echo "Building $(BINARY_NAME)..."
-	go build $(LDFLAGS) -o $(BINARY_NAME) ./cmd/provenix
+	@echo "Version:    $(VERSION)"
+	@echo "Commit:     $(GIT_COMMIT)"
+	@echo "Build Date: $(BUILD_DATE)"
+	@echo "=========================================="
+	@go build $(LDFLAGS) -o $(BINARY_NAME) ./cmd/provenix
+	@echo "✅ Build successful: ./$(BINARY_NAME)"
+	@echo ""
+	@./$(BINARY_NAME) version 2>/dev/null || echo "Binary version: $(VERSION) ($(GIT_COMMIT))"
 
 install: ## Install the binary to $(GOPATH)/bin
+	@echo "=========================================="
 	@echo "Installing $(BINARY_NAME)..."
-	go install $(LDFLAGS) ./cmd/provenix
+	@echo "Version:    $(VERSION)"
+	@echo "=========================================="
+	@go install $(LDFLAGS) ./cmd/provenix
+	@echo "✅ Installation successful"
+	@which $(BINARY_NAME)
 
 test: ## Run unit tests
 	go test -v -race -coverprofile=coverage.out ./...
@@ -64,5 +77,21 @@ verify: ## Verify dependencies and run checks
 	go vet ./...
 	golangci-lint run
 	go test -short ./...
+
+build-verbose: ## Build with verbose output
+	@echo "=========================================="
+	@echo "Building $(BINARY_NAME) (verbose mode)..."
+	@echo "Version:    $(VERSION)"
+	@echo "Commit:     $(GIT_COMMIT)"
+	@echo "Build Date: $(BUILD_DATE)"
+	@echo "LDFLAGS:    $(LDFLAGS)"
+	@echo "=========================================="
+	go build -v $(LDFLAGS) -o $(BINARY_NAME) ./cmd/provenix
+	@echo ""
+	@echo "✅ Build successful: ./$(BINARY_NAME)"
+	@ls -lh $(BINARY_NAME)
+
+quick: ## Quick build without version info
+	@go build -o $(BINARY_NAME) ./cmd/provenix && echo "✅ Quick build: ./$(BINARY_NAME)"
 
 .DEFAULT_GOAL := help
