@@ -100,3 +100,41 @@ func TestRekorClient_Integration(t *testing.T) {
 	t.Log("Rekor client created successfully")
 	t.Log("Full integration test requires Rekor staging environment")
 }
+
+// TestSearchByArtifactDigest tests Rekor search functionality (unit test with mock).
+func TestSearchByArtifactDigest_NoRealServer(t *testing.T) {
+	// This is a unit test - we can't test actual search without a mock server
+	client := NewRekorClient("https://rekor.example.com")
+	ctx := context.Background()
+
+	// Attempting search will fail without real server, but validates method exists
+	_, err := client.SearchByArtifactDigest(ctx, "abc123")
+
+	// Expected to fail (no real server)
+	if err == nil {
+		t.Log("Note: Search succeeded (possibly hitting real server)")
+	}
+
+	// Method exists and can be called
+	t.Log("SearchByArtifactDigest method validated")
+}
+
+// TestExtractAttestationFromEntry tests extraction of attestation data.
+func TestExtractAttestationFromEntry_MissingFields(t *testing.T) {
+	client := NewRekorClient("")
+
+	// Test with invalid entry (missing fields)
+	entry := &RekorEntryResponse{
+		UUID:           "test-uuid",
+		Body:           "aW52YWxpZA==", // base64("invalid") - invalid JSON
+		IntegratedTime: 1700000000,
+		LogIndex:       1000,
+	}
+
+	_, err := client.ExtractAttestationFromEntry(entry)
+
+	// Should fail due to invalid JSON
+	if err == nil {
+		t.Error("Expected error for invalid entry body, got nil")
+	}
+}

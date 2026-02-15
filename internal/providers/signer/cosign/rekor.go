@@ -167,6 +167,154 @@ func (r *RekorClient) GetEntry(ctx context.Context, uuid string) (*RekorEntryRes
 	return nil, fmt.Errorf("entry not found in response")
 }
 
+// SearchByArtifactDigest searches Rekor for entries matching an artifact digest.
+// Returns a list of matching entries, sorted by newest first.
+func (r *RekorClient) SearchByArtifactDigest(ctx context.Context, digest string) ([]*RekorEntryResponse, error) {
+	// Rekor search API endpoint
+	url := fmt.Sprintf("%s/api/v1/index/retrieve", r.rekorURL)
+
+	// Build search query
+	searchQuery := map[string]interface{}{
+		"hash": fmt.Sprintf("sha256:%s", digest),
+	}
+
+	queryJSON, err := json.Marshal(searchQuery)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal search query: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(queryJSON))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create search request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search Rekor: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("Rekor search returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response - returns list of UUIDs
+	var uuids []string
+	if err := json.NewDecoder(resp.Body).Decode(&uuids); err != nil {
+		return nil, fmt.Errorf("failed to decode search response: %w", err)
+	}
+
+	if len(uuids) == 0 {
+		return nil, nil // No entries found
+	}
+
+	// Fetch full entry details for each UUID
+	entries := make([]*RekorEntryResponse, 0, len(uuids))
+	for _, uuid := range uuids {
+		entry, err := r.GetEntry(ctx, uuid)
+		if err != nil {
+			// Log warning but continue with other entries
+			continue
+		}
+		entries = append(entries, entry)
+	}
+
+	// Sort by integrated time (newest first)
+	// Simple bubble sort for small datasets (MVP)
+	for i := 0; i < len(entries); i++ {
+		for j := i + 1; j < len(entries); j++ {
+			if entries[i].IntegratedTime < entries[j].IntegratedTime {
+				entries[i], entries[j] = entries[j], entries[i]
+			}
+		}
+	}
+
+	return entries, nil
+}
+
+// ExtractAttestationFromEntry extracts attestation data from a Rekor entry.
+// Returns the in-toto statement, signature, and public key/certificate.
+func (r *RekorClient) ExtractAttestationFromEntry(entry *RekorEntryResponse) (*AttestationBundle, error) {
+	// Decode base64 body
+	bodyBytes, err := base64.StdEncoding.DecodeString(entry.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode entry body: %w", err)
+	}
+
+	// Parse entry body as JSON
+	var bodyData map[string]interface{}
+	if err := json.Unmarshal(bodyBytes, &bodyData); err != nil {
+		return nil, fmt.Errorf("failed to parse entry body: %w", err)
+	}
+
+	// Extract spec field
+	spec, ok := bodyData["spec"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid entry format: missing spec")
+	}
+
+	// Extract signature data
+	signatureData, ok := spec["signature"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid entry format: missing signature")
+	}
+
+	signatureContent, ok := signatureData["content"].(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid entry format: missing signature content")
+	}
+
+	// Extract public key or certificate
+	var publicKey, certificate string
+	if pubKeyData, ok := signatureData["publicKey"].(map[string]interface{}); ok {
+		if content, ok := pubKeyData["content"].(string); ok {
+			publicKey = content
+		}
+	}
+	if certData, ok := signatureData["certificate"].(string); ok {
+		certificate = certData
+	}
+
+	// Extract payload (the in-toto statement)
+	dataField, ok := spec["data"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid entry format: missing data")
+	}
+
+	// The actual statement might be in different formats depending on entry type
+	// For hashedrekord, we need to reconstruct from hash
+	// For intoto, the statement is directly included
+	var statementBase64 string
+	
+	// Try to find statement in various locations
+	if content, ok := dataField["content"].(string); ok {
+		statementBase64 = content
+	} else if _, ok := dataField["hash"].(map[string]interface{}); ok {
+		// For hashedrekord, we don't have the full statement in Rekor
+		// This is a limitation - we can only verify, not retrieve the full attestation
+		return nil, fmt.Errorf("hashedrekord entries don't contain full attestation data")
+	}
+
+	bundle := &AttestationBundle{
+		StatementBase64: statementBase64,
+		Signature:       signatureContent,
+		PublicKey:       publicKey,
+		Certificate:     certificate,
+		RekorUUID:       entry.UUID,
+		RekorLogIndex:   int(entry.LogIndex),
+	}
+
+	return bundle, nil
+}
+
 // VerifyInclusionProof verifies the Merkle tree inclusion proof for an entry.
 // For MVP, this is a simplified implementation.
 // Production would use full Merkle tree verification logic.
