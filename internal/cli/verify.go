@@ -44,7 +44,9 @@ func init() {
 	verifyCmd.Flags().String("attestation", "", "Path to attestation file (instead of querying Rekor)")
 	verifyCmd.Flags().String("public-key", "", "Path to public key file (for key-based verification)")
 	verifyCmd.Flags().Bool("verbose", false, "Show detailed verification information")
+	verifyCmd.Flags().Bool("all", false, "Show all attestations from Rekor (not just the latest)")
 	verifyCmd.Flags().String("rekor-url", "https://rekor.sigstore.dev", "Rekor server URL")
+	verifyCmd.Flags().String("digest", "", "Artifact digest (sha256:...) for Rekor query")
 }
 
 func runVerify(cmd *cobra.Command, args []string) error {
@@ -52,9 +54,80 @@ func runVerify(cmd *cobra.Command, args []string) error {
 	attestationFile, _ := cmd.Flags().GetString("attestation")
 	publicKeyPath, _ := cmd.Flags().GetString("public-key")
 	verbose, _ := cmd.Flags().GetBool("verbose")
+	showAll, _ := cmd.Flags().GetBool("all")
 	rekorURL, _ := cmd.Flags().GetString("rekor-url")
+	digest, _ := cmd.Flags().GetString("digest")
 
 	fmt.Printf("🔍 Verifying attestation for: %s\n", artifact)
+
+	ctx := context.Background()
+
+	// If digest is provided, query Rekor first
+	if digest != "" && attestationFile == "" {
+		fmt.Printf("🌐 Querying Rekor for attestations matching digest: %s\n", digest)
+		
+		rekorClient := cosign.NewRekorClient(rekorURL)
+		entries, err := rekorClient.SearchByArtifactDigest(ctx, digest)
+		if err != nil {
+			fmt.Printf("❌ Failed to query Rekor: %v\n", err)
+			os.Exit(ExitFatal)
+		}
+
+		if len(entries) == 0 {
+			fmt.Printf("❌ No attestations found in Rekor for this digest\n")
+			fmt.Printf("  Digest: %s\n", digest)
+			fmt.Printf("  Hint: Ensure the artifact was attested and published to Rekor\n")
+			os.Exit(ExitFatal)
+		}
+
+		fmt.Printf("  Found %d attestation(s) in Rekor\n", len(entries))
+
+		// Show all or just the latest
+		entriesToVerify := entries
+		if !showAll && len(entries) > 1 {
+			fmt.Printf("  Using latest attestation (use --all to see all)\n")
+			entriesToVerify = entries[:1]
+		}
+
+		for i, entry := range entriesToVerify {
+			fmt.Printf("\n📋 Attestation %d/%d:\n", i+1, len(entriesToVerify))
+			fmt.Printf("  UUID:       %s\n", entry.UUID)
+			fmt.Printf("  Log Index:  %d\n", entry.LogIndex)
+			fmt.Printf("  Timestamp:  %s\n", time.Unix(entry.IntegratedTime, 0).UTC().Format(time.RFC3339))
+
+			// Extract attestation bundle from Rekor entry
+			bundle, err := rekorClient.ExtractAttestationFromEntry(entry)
+			if err != nil {
+				fmt.Printf("  ⚠️  Failed to extract attestation: %v\n", err)
+				continue
+			}
+
+			// Save to temp file for verification
+			tmpFile, err := os.CreateTemp("", "rekor-attestation-*.json")
+			if err != nil {
+				fmt.Printf("  ⚠️  Failed to create temp file: %v\n", err)
+				continue
+			}
+			defer os.Remove(tmpFile.Name())
+
+			bundleJSON, _ := json.MarshalIndent(bundle, "", "  ")
+			if err := os.WriteFile(tmpFile.Name(), bundleJSON, 0644); err != nil {
+				fmt.Printf("  ⚠️  Failed to write temp file: %v\n", err)
+				continue
+			}
+
+			// Verify the attestation
+			result, err := verifyAttestationFile(ctx, tmpFile.Name(), publicKeyPath, rekorURL)
+			if err != nil {
+				fmt.Printf("  ❌ Verification failed: %v\n", err)
+				continue
+			}
+
+			displayVerificationResult(result, verbose)
+		}
+
+		return nil
+	}
 
 	// Determine attestation file path
 	if attestationFile == "" {
@@ -64,12 +137,39 @@ func runVerify(cmd *cobra.Command, args []string) error {
 		} else {
 			fmt.Printf("❌ No attestation file found\n")
 			fmt.Printf("  Use --attestation to specify attestation file\n")
+			fmt.Printf("  Or use --digest to query Rekor\n")
 			fmt.Printf("  Or place attestation.json in current directory\n")
 			os.Exit(ExitFatal)
 		}
 	}
 
-	ctx := context.Background()
+	// Perform verification
+	result, err := verifyAttestationFile(ctx, attestationFile, publicKeyPath, rekorURL)
+	if err != nil {
+		fmt.Printf("❌ Verification failed: %v\n", err)
+		os.Exit(ExitFatal)
+	}
+
+	displayVerificationResult(result, verbose)
+
+	// Final verdict
+	fmt.Printf("\n")
+	if result.Valid {
+		fmt.Printf("✅ Verification PASSED\n")
+		fmt.Printf("   All checks passed successfully\n")
+		fmt.Printf("   Verified at: %s\n", time.Now().UTC().Format(time.RFC3339))
+		return nil
+	} else {
+		fmt.Printf("❌ Verification FAILED\n")
+		fmt.Printf("   One or more checks failed\n")
+		fmt.Printf("   See errors above for details\n")
+		os.Exit(ExitFatal)
+		return nil
+	}
+}
+
+// verifyAttestationFile performs verification on an attestation file.
+func verifyAttestationFile(ctx context.Context, attestationFile, publicKeyPath, rekorURL string) (*cosign.VerificationResult, error) {
 	var result *cosign.VerificationResult
 	var err error
 
@@ -91,11 +191,11 @@ func runVerify(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if err != nil {
-		fmt.Printf("❌ Verification failed: %v\n", err)
-		os.Exit(ExitFatal)
-	}
+	return result, err
+}
 
+// displayVerificationResult displays the verification results to the user.
+func displayVerificationResult(result *cosign.VerificationResult, verbose bool) {
 	// Display verification results
 	fmt.Printf("\n📋 Verification Results:\n")
 	fmt.Printf("  Artifact:          %s\n", result.Artifact)
@@ -133,21 +233,6 @@ func runVerify(cmd *cobra.Command, args []string) error {
 		fmt.Printf("\n📄 Detailed Attestation:\n")
 		prettyJSON, _ := json.MarshalIndent(result, "  ", "  ")
 		fmt.Println(string(prettyJSON))
-	}
-
-	// Final verdict
-	fmt.Printf("\n")
-	if result.Valid {
-		fmt.Printf("✅ Verification PASSED\n")
-		fmt.Printf("   All checks passed successfully\n")
-		fmt.Printf("   Verified at: %s\n", time.Now().UTC().Format(time.RFC3339))
-		return nil
-	} else {
-		fmt.Printf("❌ Verification FAILED\n")
-		fmt.Printf("   One or more checks failed\n")
-		fmt.Printf("   See errors above for details\n")
-		os.Exit(ExitFatal)
-		return nil
 	}
 }
 
