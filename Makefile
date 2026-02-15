@@ -7,6 +7,10 @@ GIT_COMMIT=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS=-ldflags "-s -w -X github.com/open-verix/provenix/internal/cli.Version=$(VERSION) -X github.com/open-verix/provenix/internal/cli.GitCommit=$(GIT_COMMIT) -X github.com/open-verix/provenix/internal/cli.BuildDate=$(BUILD_DATE)"
 
+# UPX compression (optional - requires upx to be installed)
+# Install: brew install upx (macOS), apt-get install upx (Linux)
+UPX?=
+
 # Enable verbose output with VERBOSE=1
 VERBOSE?=
 
@@ -107,6 +111,27 @@ build-info: ## Build with version info output (same as VERBOSE=1 make build)
 
 quick: ## Quick build without version info
 	@go build -o $(BINARY_NAME) ./cmd/provenix && echo "✅ Quick build: ./$(BINARY_NAME)"
+
+build-small: ## Build with maximum size optimization (slower startup)
+	@echo "Building optimized binary (this may take a while)..."
+	@CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath -o $(BINARY_NAME) ./cmd/provenix
+	@echo "✅ Optimized build complete"
+	@ls -lh $(BINARY_NAME)
+ifdef UPX
+	@echo "Compressing with UPX..."
+	@upx -q --best --lzma $(BINARY_NAME) 2>/dev/null || upx -q --best $(BINARY_NAME)
+	@echo "✅ Compressed binary:"
+	@ls -lh $(BINARY_NAME)
+endif
+
+size-analysis: ## Analyze binary size breakdown
+	@echo "Binary size analysis:"
+	@ls -lh $(BINARY_NAME)
+	@echo ""
+	@echo "Top 20 largest dependencies:"
+	@go list -m all | head -20
+	@echo ""
+	@echo "Total dependencies: $$(go list -m all | wc -l | tr -d ' ')"
 
 # Removed - 'build' is now quiet by default, use 'build-info' or VERBOSE=1 for output
 
