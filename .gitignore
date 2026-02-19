@@ -42,6 +42,14 @@ temp/
 .github/workflows/.cache/
 
 # examples output
-examples/
 explains/
 manuals/
+
+# Test artifacts (should not be committed)
+provenix-stripped
+my-policy.yaml
+provenix.yaml
+vex.json
+
+# Draft documentation
+docs/drafts/
