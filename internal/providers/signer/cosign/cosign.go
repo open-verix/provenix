@@ -96,7 +96,7 @@ func (p *Provider) signKeyless(ctx context.Context, statement *signerprovider.St
 	fulcioClient := NewFulcioClient(opts.FulcioURL, opts.RekorURL)
 
 	// Step 3: Perform keyless signing (ephemeral key + Fulcio cert + Rekor)
-	publishRekor := !opts.Local // Skip Rekor in local mode
+	publishRekor := !opts.SkipTransparency // Skip Rekor if transparency is disabled
 	keylessSig, err := fulcioClient.SignKeyless(ctx, payload, idToken, publishRekor)
 	if err != nil {
 		// Check if this is a Rekor-only failure (partial success)

@@ -32,8 +32,8 @@ This command orchestrates the complete attestation workflow:
   1. Generate SBOM using Syft
   2. Scan vulnerabilities using Grype
   3. Create in-toto statement
-  4. Sign with Cosign (keyless via OIDC)
-  5. Publish to Rekor transparency log
+  4. Sign with Cosign (keyless via OIDC or local key)
+  5. Publish to Rekor transparency log (unless --key is used)
 
 The entire operation is atomic - all data flows in-memory with no temporary
 files, ensuring the SBOM and vulnerability report represent the exact state
@@ -53,9 +53,6 @@ Supported Artifacts:
 	Example: `  # Attest a Docker image
   provenix attest nginx:latest
 
-  # Attest with local-only mode (no Rekor publishing)
-  provenix attest --local ./myapp
-
   # Attest with custom output path
   provenix attest myapp:v1.0 --output attestation.json
 
@@ -69,7 +66,6 @@ Supported Artifacts:
 }
 
 func init() {
-	attestCmd.Flags().Bool("local", false, "Local-only mode (no Rekor publishing)")
 	attestCmd.Flags().StringP("output", "o", "", "Output file path (default: .provenix/attestations/sha256-{digest}.json)")
 	attestCmd.Flags().String("format", "cyclonedx-json", "SBOM format (cyclonedx-json, spdx-json, syft-json)")
 	attestCmd.Flags().String("config", "", "Path to provenix.yaml configuration file")
@@ -80,7 +76,6 @@ func runAttest(cmd *cobra.Command, args []string) error {
 	artifact := args[0]
 	
 	// Get flags
-	localMode, _ := cmd.Flags().GetBool("local")
 	outputPath, _ := cmd.Flags().GetString("output")
 	sbomFormat, _ := cmd.Flags().GetString("format")
 	configPath, _ := cmd.Flags().GetString("config")
@@ -108,14 +103,6 @@ func runAttest(cmd *cobra.Command, args []string) error {
 	if keyPath != "" {
 		cfg.Signing.Key.Path = keyPath
 		cfg.Signing.Mode = "key"
-	}
-	// Local mode: skip Rekor transparency log
-	if localMode && cfg.Signing.Mode != "key" {
-		// In keyless mode with --local, still use keyless but skip Rekor
-		cfg.Rekor.URL = "" // Empty URL means skip transparency log
-	} else if localMode && cfg.Signing.Mode == "key" {
-		// In key mode with --local, also skip Rekor
-		cfg.Rekor.URL = ""
 	}
 	
 	// Validate configuration
@@ -166,7 +153,6 @@ func runAttest(cmd *cobra.Command, args []string) error {
 			RekorURL:         cfg.Rekor.URL,
 			OIDCClientID:     "sigstore",
 			SkipTransparency: cfg.Rekor.URL == "",
-			Local:            localMode,
 		},
 		GeneratorVersion: Version,
 	}
@@ -215,14 +201,14 @@ func runAttest(cmd *cobra.Command, args []string) error {
 	}
 
 	// Exit code semantics:
-	// 0: Complete success (signed and published to Rekor, or local mode)
+	// 0: Complete success (signed and published to Rekor)
 	// 2: Partial success (signed but Rekor unavailable)
 	// 1: Fatal error (handled by error return)
 	
-	skipTransparency := cfg.Rekor.URL == "" || opts.SignOptions.SkipTransparency || localMode
+	skipTransparency := cfg.Rekor.URL == "" || opts.SignOptions.SkipTransparency
 	
 	if skipTransparency {
-		fmt.Println("\n🌐 Transparency: skipped (local mode)")
+		fmt.Println("\n🌐 Transparency: skipped (air-gapped mode)")
 		fmt.Printf("\n✅ Attestation complete (exit code: %d)\n", ExitSuccess)
 		return nil
 	}

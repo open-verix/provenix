@@ -109,9 +109,6 @@ type Options struct {
 	
 	// SkipTransparency skips publishing to Rekor (air-gapped mode)
 	SkipTransparency bool
-	
-	// Local indicates local-only mode (no Rekor publishing)
-	Local bool
 }
 
 // DefaultOptions returns the default signing options.
