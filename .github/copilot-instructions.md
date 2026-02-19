@@ -239,7 +239,7 @@ evidence, err := generator.Generate(ctx, artifact, opts)
 ### POSIX Conventions
 
 - Flags: `--flag` (long), `-f` (short)
-- Boolean flags: `--local` (no value needed)
+- Boolean flags: `--skip-transparency` (no value needed)
 - Help: `--help`, `-h`
 - Version: `--version`, `-v`
 
@@ -280,11 +280,11 @@ Exit Codes:
   0 - Complete success (signed and published)
   1 - Fatal error (cryptographic failure)
   2 - Partial success (saved locally, Rekor unavailable)`,
-    Example: `  # Attest a Docker image
+    Example: `  # Attest a Docker image (keyless via OIDC)
   provenix attest nginx:latest
 
-  # Attest a local binary
-  provenix attest --local ./myapp
+  # Attest with local key (development/air-gapped)
+  provenix attest myapp --key path/to/key.pem
 
   # Use custom configuration
   provenix attest myapp --config custom.yaml`,
@@ -518,7 +518,7 @@ chore: update Syft to v0.100.1 for security patch
 1. **Does this introduce TOCTOU vulnerabilities?** (If yes, redesign)
 2. **Can this work without temporary files?** (If no, reconsider)
 3. **Is this tightly coupled to a specific library?** (If yes, add abstraction)
-4. **Does this work in air-gapped environments?** (Consider `--local` mode)
+4. **Does this work in air-gapped environments?** (Consider `--key` flag with `--skip-transparency`)
 5. **What happens if Rekor is unavailable?** (Should exit 2 and save locally)
 6. **Is this testable with mocks?** (If no, refactor)
 7. **Does this need to be in the public API (pkg/)?** (Probably not - use internal/)
