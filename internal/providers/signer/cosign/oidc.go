@@ -2,7 +2,10 @@ package cosign
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 
 	"github.com/sigstore/cosign/v2/pkg/providers"
@@ -77,13 +80,55 @@ func isGitLabCI() bool {
 
 // getGitHubActionsToken retrieves OIDC token from GitHub Actions.
 func (p *OIDCTokenProvider) getGitHubActionsToken(ctx context.Context) (string, error) {
-	// GitHub Actions OIDC token is available via providers.GitHub()
-	// The cosign library handles the HTTP request to ACTIONS_ID_TOKEN_REQUEST_URL
-	token, err := providers.Provide(ctx, "sigstore")
-	if err != nil {
-		return "", fmt.Errorf("GitHub Actions token retrieval failed: %w", err)
+	// Get the token request URL and token
+	requestURL := os.Getenv("ACTIONS_ID_TOKEN_REQUEST_URL")
+	requestToken := os.Getenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+	
+	if requestURL == "" || requestToken == "" {
+		return "", fmt.Errorf("GitHub Actions OIDC environment variables not properly set")
 	}
-	return token, nil
+
+	// Construct request URL with audience
+	audience := "sigstore"
+	fullURL := fmt.Sprintf("%s&audience=%s", requestURL, audience)
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(ctx, "GET", fullURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Add authorization header
+	req.Header.Add("Authorization", "Bearer "+requestToken)
+	req.Header.Add("Accept", "application/json; api-version=2.0")
+	req.Header.Add("Content-Type", "application/json")
+
+	// Execute request
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to request token: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("token request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	var tokenResponse struct {
+		Value string `json:"value"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResponse); err != nil {
+		return "", fmt.Errorf("failed to parse token response: %w", err)
+	}
+
+	if tokenResponse.Value == "" {
+		return "", fmt.Errorf("empty token received from GitHub Actions")
+	}
+
+	return tokenResponse.Value, nil
 }
 
 // getGitLabCIToken retrieves OIDC token from GitLab CI.
