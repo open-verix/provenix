@@ -2,7 +2,7 @@
 .vscode/
 
 # Binaries
-provenix
+/provenix
 *.exe
 *.dll
 *.so
