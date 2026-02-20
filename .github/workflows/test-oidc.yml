@@ -24,10 +24,27 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.25"
+          go-version: "1.25.7"
+          cache: true
+
+      - name: Verify Go installation
+        run: |
+          go version
+          go env GOVERSION
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Verify source files
+        run: |
+          echo "=== Checking cmd/provenix directory ==="
+          ls -la cmd/provenix/
+          echo ""
+          echo "=== Content of main.go ==="
+          cat cmd/provenix/main.go
 
       - name: Build Provenix
-        run: go build -o provenix ./cmd/provenix
+        run: go build -v -o provenix ./cmd/provenix
 
       - name: Display OIDC environment info
         run: |
