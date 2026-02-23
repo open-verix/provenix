@@ -26,7 +26,7 @@ func (e *ExitError) Error() string {
 func NewExitError(code int, message string) *ExitError {
 	return &ExitError{
 		Code: code,
-		Err:  fmt.Errorf(message),
+		Err:  fmt.Errorf("%s", message),
 	}
 }
 
