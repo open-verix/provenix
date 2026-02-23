@@ -79,8 +79,13 @@ func (c *FulcioClient) SignKeyless(ctx context.Context, payload []byte, idToken 
 		return nil, fmt.Errorf("failed to marshal public key: %w", err)
 	}
 
-	// Step 2.5: Create proof of possession (sign public key with private key)
-	pubKeyHash := sha256.Sum256(publicKeyPEM)
+	// Step 2.5: Create proof of possession (sign DER-encoded public key)
+	// Fulcio v2 requires signing the DER-encoded public key bytes
+	publicKeyDER, err := x509.MarshalPKIXPublicKey(privateKey.Public())
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal public key to DER: %w", err)
+	}
+	pubKeyHash := sha256.Sum256(publicKeyDER)
 	proofOfPossession, err := signWithECDSA(privateKey, pubKeyHash[:])
 	if err != nil {
 		return nil, fmt.Errorf("failed to create proof of possession: %w", err)
