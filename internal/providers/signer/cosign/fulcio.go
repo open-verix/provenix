@@ -79,8 +79,15 @@ func (c *FulcioClient) SignKeyless(ctx context.Context, payload []byte, idToken 
 		return nil, fmt.Errorf("failed to marshal public key: %w", err)
 	}
 
+	// Step 2.5: Create proof of possession (sign public key with private key)
+	pubKeyHash := sha256.Sum256(publicKeyPEM)
+	proofOfPossession, err := signWithECDSA(privateKey, pubKeyHash[:])
+	if err != nil {
+		return nil, fmt.Errorf("failed to create proof of possession: %w", err)
+	}
+
 	// Step 3: Request certificate from Fulcio
-	certPEM, chainPEM, err := c.requestCertificate(ctx, publicKeyPEM, idToken)
+	certPEM, chainPEM, err := c.requestCertificate(ctx, publicKeyPEM, proofOfPossession, idToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to request Fulcio certificate: %w", err)
 	}
@@ -149,11 +156,11 @@ type FulcioCreateCertificateResponse struct {
 // requestCertificate requests a code-signing certificate from Fulcio.
 //
 // This implements the Fulcio v2 API protocol:
-// 1. Send public key + OIDC token
+// 1. Send public key + proof of possession + OIDC token
 // 2. Receive certificate with identity bound from OIDC claims
 // 3. Validate certificate chain
-func (c *FulcioClient) requestCertificate(ctx context.Context, publicKeyPEM []byte, idToken string) ([]byte, []byte, error) {
-	// Parse public key to create proof of possession
+func (c *FulcioClient) requestCertificate(ctx context.Context, publicKeyPEM []byte, proofOfPossession []byte, idToken string) ([]byte, []byte, error) {
+	// Parse public key to validate format
 	block, _ := pem.Decode(publicKeyPEM)
 	if block == nil {
 		return nil, nil, fmt.Errorf("failed to decode public key PEM")
@@ -163,11 +170,6 @@ func (c *FulcioClient) requestCertificate(ctx context.Context, publicKeyPEM []by
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to parse public key: %w", err)
 	}
-
-	// Create challenge and proof of possession
-	// For ECDSA, we need the private key to sign - but we don't have it here
-	// In real implementation, this would be done in SignKeyless before calling requestCertificate
-	// For now, we'll use a simplified flow that works with Fulcio's API
 	
 	// Prepare request payload
 	// Fulcio v2 API expects: POST /api/v2/signingCert
@@ -177,7 +179,7 @@ func (c *FulcioClient) requestCertificate(ctx context.Context, publicKeyPEM []by
 				"content":   string(publicKeyPEM), // PEM is already base64-encoded
 				"algorithm": "ECDSA_P256_SHA256",
 			},
-			"proofOfPossession": []byte{}, // Simplified for MVP
+			"proofOfPossession": base64.StdEncoding.EncodeToString(proofOfPossession),
 		},
 	}
 
