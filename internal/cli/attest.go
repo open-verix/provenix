@@ -70,6 +70,7 @@ func init() {
 	attestCmd.Flags().String("format", "cyclonedx-json", "SBOM format (cyclonedx-json, spdx-json, syft-json)")
 	attestCmd.Flags().String("config", "", "Path to provenix.yaml configuration file")
 	attestCmd.Flags().String("key", "", "Path to private key (for development)")
+	attestCmd.Flags().Bool("skip-transparency", false, "Skip Rekor transparency log publishing (keyless signing only)")
 }
 
 func runAttest(cmd *cobra.Command, args []string) error {
@@ -80,6 +81,7 @@ func runAttest(cmd *cobra.Command, args []string) error {
 	sbomFormat, _ := cmd.Flags().GetString("format")
 	configPath, _ := cmd.Flags().GetString("config")
 	keyPath, _ := cmd.Flags().GetString("key")
+	skipTransparency, _ := cmd.Flags().GetBool("skip-transparency")
 	
 	fmt.Printf("🔍 Attesting artifact: %s\n", artifact)
 	
@@ -152,7 +154,7 @@ func runAttest(cmd *cobra.Command, args []string) error {
 			FulcioURL:        cfg.Signing.OIDC.FulcioURL,
 			RekorURL:         cfg.Rekor.URL,
 			OIDCClientID:     "sigstore",
-			SkipTransparency: cfg.Rekor.URL == "",
+			SkipTransparency: skipTransparency || cfg.Rekor.URL == "",
 		},
 		GeneratorVersion: Version,
 	}
@@ -205,9 +207,9 @@ func runAttest(cmd *cobra.Command, args []string) error {
 	// 2: Partial success (signed but Rekor unavailable)
 	// 1: Fatal error (handled by error return)
 	
-	skipTransparency := cfg.Rekor.URL == "" || opts.SignOptions.SkipTransparency
+	shouldSkipTransparency := cfg.Rekor.URL == "" || opts.SignOptions.SkipTransparency
 	
-	if skipTransparency {
+	if shouldSkipTransparency {
 		fmt.Println("\n🌐 Transparency: skipped (air-gapped mode)")
 		fmt.Printf("\n✅ Attestation complete (exit code: %d)\n", ExitSuccess)
 		return nil
