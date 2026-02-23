@@ -174,7 +174,7 @@ func (c *FulcioClient) requestCertificate(ctx context.Context, publicKeyPEM []by
 	requestPayload := map[string]interface{}{
 		"publicKeyRequest": map[string]interface{}{
 			"publicKey": map[string]interface{}{
-				"content":   base64.StdEncoding.EncodeToString(publicKeyPEM),
+				"content":   string(publicKeyPEM), // PEM is already base64-encoded
 				"algorithm": "ECDSA_P256_SHA256",
 			},
 			"proofOfPossession": []byte{}, // Simplified for MVP
