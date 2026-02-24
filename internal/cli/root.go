@@ -49,6 +49,7 @@ Exit Codes:
 
 Documentation: https://github.com/open-verix/provenix/docs
 `,
+	Version:       Version,
 	SilenceUsage:  true,
 	SilenceErrors: false,
 }
@@ -59,6 +60,10 @@ func Execute() error {
 }
 
 func init() {
+	// Set custom version template for --version flag
+	rootCmd.SetVersionTemplate(fmt.Sprintf("provenix version %s\n  commit: %s\n  built:  %s\n  go:     %s\n",
+		Version, GitCommit, BuildDate, runtime.Version()))
+	
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(attestCmd)
