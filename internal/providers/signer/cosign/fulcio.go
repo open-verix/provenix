@@ -79,14 +79,17 @@ func (c *FulcioClient) SignKeyless(ctx context.Context, payload []byte, idToken 
 		return nil, fmt.Errorf("failed to marshal public key: %w", err)
 	}
 
-	// Step 2.5: Create proof of possession (sign DER-encoded public key)
-	// Fulcio v2 requires signing the DER-encoded public key bytes
-	publicKeyDER, err := x509.MarshalPKIXPublicKey(privateKey.Public())
+	// Step 2.5: Extract subject from JWT and create proof of possession
+	// Fulcio v2 requires signing the JWT subject to prove key ownership
+	subject, err := extractSubjectFromJWT(idToken)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal public key to DER: %w", err)
+		return nil, fmt.Errorf("failed to extract subject from JWT: %w", err)
 	}
-	pubKeyHash := sha256.Sum256(publicKeyDER)
-	proofOfPossession, err := signWithECDSA(privateKey, pubKeyHash[:])
+	
+	// Sign the subject (as bytes) with the ephemeral private key
+	subjectBytes := []byte(subject)
+	subjectHash := sha256.Sum256(subjectBytes)
+	proofOfPossession, err := signWithECDSA(privateKey, subjectHash[:])
 	if err != nil {
 		return nil, fmt.Errorf("failed to create proof of possession: %w", err)
 	}
@@ -353,4 +356,35 @@ func extractPublicKeyFromCertificate(certPEM []byte) ([]byte, error) {
 	}
 
 	return publicKeyPEM, nil
+}
+
+// extractSubjectFromJWT extracts the "sub" field from a JWT token.
+// Note: This function does NOT validate the JWT signature, as that's Fulcio's responsibility.
+// We only parse the unverified token to extract the subject for proof of possession.
+func extractSubjectFromJWT(token string) (string, error) {
+	// JWT format: header.payload.signature
+	parts := bytes.Split([]byte(token), []byte("."))
+	if len(parts) < 2 {
+		return "", fmt.Errorf("invalid JWT format: expected 3 parts, got %d", len(parts))
+	}
+
+	// Decode the payload (part 1)
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(string(parts[1]))
+	if err != nil {
+		return "", fmt.Errorf("failed to decode JWT payload: %w", err)
+	}
+
+	// Parse JSON payload
+	var payload struct {
+		Subject string `json:"sub"`
+	}
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		return "", fmt.Errorf("failed to parse JWT payload: %w", err)
+	}
+
+	if payload.Subject == "" {
+		return "", fmt.Errorf("JWT payload does not contain 'sub' field")
+	}
+
+	return payload.Subject, nil
 }
