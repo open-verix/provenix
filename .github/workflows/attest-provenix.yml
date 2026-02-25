@@ -102,20 +102,25 @@ jobs:
 
           # Show attestation summary
           echo "Attestation generated:"
-          jq '.artifact, .artifactDigest, .metadata.generatedAt' attestation.json || true
+          STATEMENT=$(jq -r '.statementBase64' attestation.json | base64 -d)
+          echo "$STATEMENT" | jq -r '.subject[0].name, .subject[0].digest.sha256, .predicate.metadata.generatedAt' || true
 
       - name: Validate attestation structure
         run: |
           # Verify attestation is valid JSON
           jq empty attestation.json
 
-          # Check required fields
-          jq -e '.artifact' attestation.json
-          jq -e '.artifactDigest' attestation.json
-          jq -e '.sbom' attestation.json
-          jq -e '.vulnerabilityReport' attestation.json
+          # Check top-level fields (in-toto bundle format)
           jq -e '.signature' attestation.json
-          jq -e '.metadata' attestation.json
+          jq -e '.statementBase64' attestation.json
+          jq -e '.publicKey' attestation.json
+
+          # Decode and check statement fields
+          STATEMENT=$(jq -r '.statementBase64' attestation.json | base64 -d)
+          echo "$STATEMENT" | jq -e '.subject'
+          echo "$STATEMENT" | jq -e '.predicate.sbom'
+          echo "$STATEMENT" | jq -e '.predicate.vulnerabilityReport'
+          echo "$STATEMENT" | jq -e '.predicate.metadata'
 
           echo "✓ Attestation structure validated"
 
@@ -124,16 +129,27 @@ jobs:
           echo "## SBOM Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          TOTAL_PACKAGES=$(jq '.sbom.content | fromjson | .components | length' attestation.json 2>/dev/null || echo "N/A")
+          # Decode statement
+          STATEMENT=$(jq -r '.statementBase64' attestation.json | base64 -d)
+
+          # Extract artifact info
+          ARTIFACT=$(echo "$STATEMENT" | jq -r '.subject[0].name' 2>/dev/null || echo "N/A")
+          echo "- **Artifact:** ${ARTIFACT}" >> $GITHUB_STEP_SUMMARY
+
+          DIGEST=$(echo "$STATEMENT" | jq -r '.subject[0].digest.sha256' 2>/dev/null || echo "N/A")
+          echo "- **SHA256:** ${DIGEST:0:16}..." >> $GITHUB_STEP_SUMMARY
+
+          # Extract SBOM info
+          TOTAL_PACKAGES=$(echo "$STATEMENT" | jq '.predicate.sbom.content | fromjson | .components | length' 2>/dev/null || echo "N/A")
           echo "- **Total Packages:** ${TOTAL_PACKAGES}" >> $GITHUB_STEP_SUMMARY
 
-          VULN_COUNT=$(jq '.vulnerabilityReport.vulnerabilities | length' attestation.json 2>/dev/null || echo "0")
+          VULN_COUNT=$(echo "$STATEMENT" | jq '.predicate.vulnerabilityReport.vulnerabilities | length' 2>/dev/null || echo "0")
           echo "- **Vulnerabilities Found:** ${VULN_COUNT}" >> $GITHUB_STEP_SUMMARY
 
-          FORMAT=$(jq -r '.sbom.format' attestation.json 2>/dev/null || echo "N/A")
+          FORMAT=$(echo "$STATEMENT" | jq -r '.predicate.sbom.format' 2>/dev/null || echo "N/A")
           echo "- **SBOM Format:** ${FORMAT}" >> $GITHUB_STEP_SUMMARY
 
-          SIGNER=$(jq -r '.metadata.signerProvider.name' attestation.json 2>/dev/null || echo "N/A")
+          SIGNER=$(echo "$STATEMENT" | jq -r '.predicate.metadata.signerProvider.name' 2>/dev/null || echo "N/A")
           echo "- **Signer:** ${SIGNER}" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload attestation artifact
