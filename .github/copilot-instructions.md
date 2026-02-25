@@ -67,6 +67,23 @@ func generateSBOM() {
 3. `provenix.yaml` in project root
 4. Embedded defaults
 
+### 5. File Management Rules
+
+**CRITICAL: Respect .gitignore Settings**
+
+- **NEVER modify or track files/directories listed in `.gitignore`**
+- **NEVER change `.gitignore` without explicit user permission**
+
+**Protected Directories (DO NOT COMMIT):**
+
+- `explains/` - Personal documentation and notes (`.gitignore` protected)
+- `manuals/` - Manual testing logs and temporary docs (`.gitignore` protected)
+
+**If documentation is needed:**
+- Ask user where to place it
+- Use `docs/` directory for official documentation
+- Respect existing file organization
+
 ---
 
 ## Code Style & Best Practices
