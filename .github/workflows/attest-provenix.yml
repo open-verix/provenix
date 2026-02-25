@@ -96,7 +96,7 @@ jobs:
         run: |
           # Attest Provenix binary with itself
           ./provenix attest provenix \
-            --format cyclonedx \
+            --format cyclonedx-json \
             --output attestation.json \
             --skip-transparency
 
