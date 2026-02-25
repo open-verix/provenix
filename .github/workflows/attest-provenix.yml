@@ -12,6 +12,7 @@ permissions:
   id-token: write # OIDC token for keyless signing
   contents: write # Upload attestation to releases
   packages: write # Publish to GitHub Packages (future)
+  security-events: write # Upload Trivy SARIF results to GitHub Security
 
 jobs:
   build-and-test:
