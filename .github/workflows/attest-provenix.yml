@@ -84,6 +84,9 @@ jobs:
     runs-on: ubuntu-24.04 # Pinned for reproducible builds
     needs: build-and-test
     if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main')
+    permissions:
+      id-token: write # Required for OIDC token
+      contents: read
 
     steps:
       - name: Checkout code
@@ -105,11 +108,30 @@ jobs:
       - name: Generate Attestation (Dog Fooding)
         id: attest
         run: |
-          # Attest Provenix binary with itself
-          ./provenix attest provenix \
-            --format cyclonedx-json \
-            --output attestation.json \
-            --skip-transparency
+          # Retry logic for transient OIDC failures (GitHub Actions 503 errors)
+          MAX_RETRIES=3
+          RETRY_DELAY=10
+          
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $i/$MAX_RETRIES: Attesting Provenix binary..."
+            
+            if ./provenix attest provenix \
+              --format cyclonedx-json \
+              --output attestation.json \
+              --skip-transparency; then
+              echo "✓ Attestation successful"
+              break
+            else
+              EXIT_CODE=$?
+              if [ $i -lt $MAX_RETRIES ]; then
+                echo "⚠️  Attempt $i failed (exit $EXIT_CODE), retrying in ${RETRY_DELAY}s..."
+                sleep $RETRY_DELAY
+              else
+                echo "❌ All $MAX_RETRIES attempts failed"
+                exit $EXIT_CODE
+              fi
+            fi
+          done
 
           # Show attestation summary
           echo "Attestation generated:"
