@@ -36,13 +36,22 @@ jobs:
           go test ./... -v -race -coverprofile=coverage.txt -covermode=atomic
 
       - name: Upload coverage
+        id: codecov
         uses: codecov/codecov-action@v4
+        continue-on-error: true
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.txt
           flags: unittests
           name: codecov-provenix
-          fail_ci_if_error: true
+          fail_ci_if_error: false
+
+      - name: Warn if Codecov upload failed
+        if: steps.codecov.outcome == 'failure'
+        run: |
+          echo "::warning::Codecov upload failed. This is optional for alpha releases."
+          echo "::warning::To enable coverage reporting, add CODECOV_TOKEN secret."
+          echo "::warning::See: https://docs.codecov.com/docs/codecov-tokens"
 
       - name: Build Provenix (Reproducible)
         run: |
