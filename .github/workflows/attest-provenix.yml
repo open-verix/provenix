@@ -37,13 +37,12 @@ jobs:
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
-        if: always()
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.txt
           flags: unittests
           name: codecov-provenix
-          fail_ci_if_error: false
+          fail_ci_if_error: true
 
       - name: Build Provenix (Reproducible)
         run: |
