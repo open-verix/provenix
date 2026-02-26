@@ -322,11 +322,10 @@ func (p *Provider) Verify(ctx context.Context, signature *signerprovider.Signatu
 
 	// Check if verification passed
 	if !result.Valid {
-		errMsg := "verification failed"
 		if len(result.Errors) > 0 {
-			errMsg = fmt.Sprintf("verification failed: %s", result.Errors[0])
+			return nil, fmt.Errorf("verification failed: %s", result.Errors[0])
 		}
-		return nil, fmt.Errorf(errMsg)
+		return nil, fmt.Errorf("verification failed")
 	}
 
 	// Return the verified statement
