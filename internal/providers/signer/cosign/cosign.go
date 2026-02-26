@@ -281,15 +281,55 @@ func (r *readerWrapper) Read(p []byte) (n int, err error) {
 //
 // For key-based verification:
 // - Verifies signature with public key from opts.PublicKeyPath
-//
-// TODO: Implement verification (Week 13-16)
 func (p *Provider) Verify(ctx context.Context, signature *signerprovider.Signature, opts signerprovider.VerifyOptions) (*signerprovider.Statement, error) {
 	if signature == nil {
 		return nil, fmt.Errorf("signature required for verification")
 	}
 
-	// Stub: Return statement as-is
-	// Real implementation would verify the signature cryptographically
+	// Create verifier with Rekor client
+	rekorURL := "https://rekor.sigstore.dev"
+	if opts.RekorURL != "" {
+		rekorURL = opts.RekorURL
+	}
+	verifier := NewVerifier(rekorURL)
+
+	// Prepare attestation bundle for verification
+	// Marshal statement to JSON and base64 encode
+	statementJSON, err := json.Marshal(signature.Statement)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal statement: %w", err)
+	}
+	
+	bundle := &AttestationBundle{
+		StatementBase64: base64.StdEncoding.EncodeToString(statementJSON),
+		Signature:       signature.Signature,
+		Certificate:     signature.Certificate,
+		PublicKey:       signature.PublicKey,
+		RekorUUID:       signature.RekorUUID,
+		RekorLogIndex:   int(signature.RekorLogIndex),
+	}
+	
+	// Use RekorEntry if RekorUUID is empty
+	if bundle.RekorUUID == "" {
+		bundle.RekorUUID = signature.RekorEntry
+	}
+
+	// Perform verification
+	result, err := verifier.Verify(ctx, bundle)
+	if err != nil {
+		return nil, fmt.Errorf("verification failed: %w", err)
+	}
+
+	// Check if verification passed
+	if !result.Valid {
+		errMsg := "verification failed"
+		if len(result.Errors) > 0 {
+			errMsg = fmt.Sprintf("verification failed: %s", result.Errors[0])
+		}
+		return nil, fmt.Errorf(errMsg)
+	}
+
+	// Return the verified statement
 	return signature.Statement, nil
 }
 
