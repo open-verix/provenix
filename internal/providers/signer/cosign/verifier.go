@@ -271,10 +271,84 @@ func (v *Verifier) verifyRekorEntry(ctx context.Context, bundle *AttestationBund
 		return nil, fmt.Errorf("inclusion proof verification failed: %w", err)
 	}
 
-	// TODO: Verify that entry body matches attestation (hash, signature, public key)
-	// This requires parsing the hashedrekord structure and comparing hashes
+	// Verify that entry body matches attestation (hash, signature, public key)
+	if err := v.verifyRekorEntryBody(entry, bundle); err != nil {
+		return nil, fmt.Errorf("rekor entry body verification failed: %w", err)
+	}
 
 	return entry, nil
+}
+
+// verifyRekorEntryBody verifies that the Rekor entry body matches the attestation bundle.
+// This ensures the logged data corresponds to what we're verifying.
+func (v *Verifier) verifyRekorEntryBody(entry *RekorEntryResponse, bundle *AttestationBundle) error {
+	// Decode base64-encoded body
+	bodyBytes, err := base64.StdEncoding.DecodeString(entry.Body)
+	if err != nil {
+		return fmt.Errorf("failed to decode rekor entry body: %w", err)
+	}
+
+	// Parse hashedrekord structure
+	var rekorBody struct {
+		Kind       string `json:"kind"`
+		APIVersion string `json:"apiVersion"`
+		Spec       struct {
+			Signature struct {
+				Content   string `json:"content"` // base64-encoded signature
+				PublicKey struct {
+					Content string `json:"content"` // base64-encoded public key or cert
+				} `json:"publicKey"`
+			} `json:"signature"`
+			Data struct {
+				Hash struct {
+					Algorithm string `json:"algorithm"`
+					Value     string `json:"value"` // hex-encoded SHA256 hash
+				} `json:"hash"`
+			} `json:"data"`
+		} `json:"spec"`
+	}
+
+	if err := json.Unmarshal(bodyBytes, &rekorBody); err != nil {
+		return fmt.Errorf("failed to parse rekor entry body: %w", err)
+	}
+
+	// Verify kind
+	if rekorBody.Kind != "hashedrekord" {
+		return fmt.Errorf("unexpected rekor entry kind: %s (expected hashedrekord)", rekorBody.Kind)
+	}
+
+	// Verify signature matches
+	if rekorBody.Spec.Signature.Content != bundle.Signature {
+		return fmt.Errorf("rekor signature does not match bundle signature")
+	}
+
+	// Verify public key or certificate matches
+	expectedPubKey := bundle.PublicKey
+	if bundle.Certificate != "" {
+		expectedPubKey = bundle.Certificate // For keyless, Rekor stores the certificate
+	}
+	if rekorBody.Spec.Signature.PublicKey.Content != expectedPubKey {
+		return fmt.Errorf("rekor public key does not match bundle")
+	}
+
+	// Verify statement hash
+	statementBytes, err := base64.StdEncoding.DecodeString(bundle.StatementBase64)
+	if err != nil {
+		return fmt.Errorf("failed to decode statement: %w", err)
+	}
+
+	computedHash := sha256.Sum256(statementBytes)
+	computedHashHex := fmt.Sprintf("%x", computedHash)
+
+	if rekorBody.Spec.Data.Hash.Value != computedHashHex {
+		return fmt.Errorf("rekor hash mismatch: expected %s, got %s", computedHashHex, rekorBody.Spec.Data.Hash.Value)
+	}
+
+	if rekorBody.Spec.Data.Hash.Algorithm != "sha256" {
+		return fmt.Errorf("unexpected hash algorithm: %s (expected sha256)", rekorBody.Spec.Data.Hash.Algorithm)
+	}
+
+	return nil
 }
 
 // parsePublicKey parses a PEM-encoded public key.
