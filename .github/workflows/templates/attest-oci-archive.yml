@@ -1,0 +1,53 @@
+# Provenix OCI Archive Attestation Template
+#
+# This workflow attests OCI archives (.tar files from docker save).
+# Useful for attesting images in air-gapped environments or private registries.
+
+name: Attest OCI Archive
+
+on:
+  workflow_call:
+    inputs:
+      archive-path:
+        description: "Path to OCI archive (.tar file)"
+        required: true
+        type: string
+      output-name:
+        description: "Output attestation filename"
+        required: false
+        type: string
+        default: "attestation.json"
+
+jobs:
+  attest:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Provenix
+        run: |
+          curl -sSL https://github.com/open-verix/provenix/releases/download/v0.1.0/provenix-linux-amd64 -o provenix
+          chmod +x provenix
+
+      - name: Initialize Provenix
+        run: ./provenix init
+
+      - name: Attest OCI Archive
+        run: |
+          ./provenix attest oci-archive://${{ inputs.archive-path }} \
+            --format cyclonedx-json \
+            --output ${{ inputs.output-name }}
+
+      - name: Verify Attestation
+        run: ./provenix verify ${{ inputs.output-name }}
+
+      - name: Upload Attestation
+        uses: actions/upload-artifact@v4
+        with:
+          name: oci-attestation-${{ github.run_id }}
+          path: ${{ inputs.output-name }}

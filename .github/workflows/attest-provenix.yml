@@ -111,7 +111,7 @@ jobs:
           # Retry logic for transient OIDC failures (GitHub Actions 503 errors)
           MAX_RETRIES=3
           RETRY_DELAY=10
-          
+
           for i in $(seq 1 $MAX_RETRIES); do
             echo "Attempt $i/$MAX_RETRIES: Attesting Provenix binary..."
             

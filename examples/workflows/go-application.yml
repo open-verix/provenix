@@ -1,0 +1,73 @@
+# Example: Attest Go Application
+#
+# This workflow builds a Go application and attests it with Provenix.
+
+name: Attest Go Application
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  build-and-attest:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # Required for keyless signing
+      contents: write # Required for release uploads
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build application
+        run: |
+          go build -trimpath -buildvcs \
+            -ldflags="-s -w -X main.version=${{ github.ref_name }}" \
+            -o myapp ./cmd/myapp
+
+      - name: Install Provenix
+        run: |
+          curl -sSL https://github.com/open-verix/provenix/releases/download/v0.1.0/provenix-linux-amd64 -o provenix
+          chmod +x provenix
+
+      - name: Initialize Grype database
+        run: ./provenix init
+
+      - name: Attest binary with Provenix
+        run: |
+          ./provenix attest myapp \
+            --format cyclonedx-json \
+            --output attestation.json
+
+      - name: Verify attestation
+        run: ./provenix verify attestation.json
+
+      - name: Generate dependency report
+        run: |
+          ./provenix report attestation.json \
+            --format markdown \
+            --output DEPENDENCIES.md
+
+      - name: Upload attestation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: attestation
+          path: |
+            attestation.json
+            DEPENDENCIES.md
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            myapp
+            attestation.json
+            DEPENDENCIES.md

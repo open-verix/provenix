@@ -1,0 +1,76 @@
+# GitLab CI/CD Pipeline for Docker Image Attestation
+#
+# This pipeline builds a Docker image, pushes it to GitLab Container Registry,
+# and attests it with Provenix.
+
+stages:
+  - build
+  - attest
+  - verify
+
+variables:
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
+  IMAGE_TAG: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG
+  PROVENIX_VERSION: "0.1.0"
+
+# Build and push Docker image
+build-image:
+  stage: build
+  image: docker:24
+  services:
+    - docker:24-dind
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker build -t $IMAGE_TAG .
+    - docker push $IMAGE_TAG
+    # Save image digest for attestation
+    - docker inspect --format='{{index .RepoDigests 0}}' $IMAGE_TAG | tee image-digest.txt
+  artifacts:
+    paths:
+      - image-digest.txt
+    expire_in: 1 hour
+
+# Attest the Docker image
+attest-image:
+  stage: attest
+  image: ubuntu:24.04
+  dependencies:
+    - build-image
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: sigstore
+  before_script:
+    - apt-get update && apt-get install -y curl
+    - curl -sSL https://github.com/open-verix/provenix/releases/download/v${PROVENIX_VERSION}/provenix-linux-amd64 -o /usr/local/bin/provenix
+    - chmod +x /usr/local/bin/provenix
+    - provenix init
+  script:
+    - IMAGE_WITH_DIGEST=$(cat image-digest.txt)
+    - |
+      provenix attest "${IMAGE_WITH_DIGEST}" \
+        --format cyclonedx-json \
+        --output attestation.json
+  artifacts:
+    paths:
+      - attestation.json
+    expire_in: 90 days
+
+# Verify attestation and generate reports
+verify-attestation:
+  stage: verify
+  image: ubuntu:24.04
+  dependencies:
+    - attest-image
+  before_script:
+    - apt-get update && apt-get install -y curl
+    - curl -sSL https://github.com/open-verix/provenix/releases/download/v${PROVENIX_VERSION}/provenix-linux-amd64 -o /usr/local/bin/provenix
+    - chmod +x /usr/local/bin/provenix
+  script:
+    - provenix verify attestation.json
+    - provenix report attestation.json --format markdown --output SECURITY.md
+  artifacts:
+    paths:
+      - SECURITY.md
+    expire_in: 90 days

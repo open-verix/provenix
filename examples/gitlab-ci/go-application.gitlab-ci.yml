@@ -1,0 +1,89 @@
+# GitLab CI/CD Pipeline for Provenix Attestation
+#
+# This pipeline builds a Go application and attests it using Provenix
+# with GitLab OIDC for keyless signing.
+
+stages:
+  - build
+  - attest
+  - verify
+  - deploy
+
+variables:
+  PROVENIX_VERSION: "0.1.0"
+  SBOM_FORMAT: "cyclonedx-json"
+
+# Build the Go application
+build:
+  stage: build
+  image: golang:1.25
+  script:
+    - go build -trimpath -buildvcs -ldflags="-s -w" -o myapp ./cmd/myapp
+  artifacts:
+    paths:
+      - myapp
+    expire_in: 1 hour
+
+# Attest the binary with Provenix
+attest:
+  stage: attest
+  image: ubuntu:24.04
+  dependencies:
+    - build
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: sigstore # Required for Fulcio keyless signing
+  before_script:
+    - apt-get update && apt-get install -y curl
+    - curl -sSL https://github.com/open-verix/provenix/releases/download/v${PROVENIX_VERSION}/provenix-linux-amd64 -o /usr/local/bin/provenix
+    - chmod +x /usr/local/bin/provenix
+    - provenix init
+  script:
+    - |
+      provenix attest myapp \
+        --format ${SBOM_FORMAT} \
+        --output attestation.json
+  artifacts:
+    paths:
+      - attestation.json
+    expire_in: 90 days
+    reports:
+      # GitLab can parse CycloneDX SBOMs
+      cyclonedx: attestation.json
+
+# Verify the attestation
+verify:
+  stage: verify
+  image: ubuntu:24.04
+  dependencies:
+    - attest
+  before_script:
+    - apt-get update && apt-get install -y curl
+    - curl -sSL https://github.com/open-verix/provenix/releases/download/v${PROVENIX_VERSION}/provenix-linux-amd64 -o /usr/local/bin/provenix
+    - chmod +x /usr/local/bin/provenix
+  script:
+    - provenix verify attestation.json
+    - provenix report attestation.json --format markdown --output SECURITY.md
+  artifacts:
+    paths:
+      - SECURITY.md
+    expire_in: 90 days
+
+# Deploy to GitLab Package Registry (optional)
+deploy:
+  stage: deploy
+  image: curlimages/curl:latest
+  dependencies:
+    - build
+    - attest
+  only:
+    - tags
+  script:
+    - |
+      curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+           --upload-file myapp \
+           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/myapp/${CI_COMMIT_TAG}/myapp"
+    - |
+      curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+           --upload-file attestation.json \
+           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/myapp/${CI_COMMIT_TAG}/attestation.json"

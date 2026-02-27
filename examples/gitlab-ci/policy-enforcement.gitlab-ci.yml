@@ -1,0 +1,105 @@
+# GitLab CI/CD Pipeline with Policy Enforcement
+#
+# This pipeline enforces security policies and fails the build
+# if vulnerabilities exceed defined thresholds.
+
+stages:
+  - build
+  - security-scan
+  - policy-check
+  - deploy
+
+variables:
+  PROVENIX_VERSION: "0.1.0"
+  POLICY_CONFIG: "provenix.yaml"
+
+build:
+  stage: build
+  image: golang:1.25
+  script:
+    - go build -o myapp ./cmd/myapp
+  artifacts:
+    paths:
+      - myapp
+    expire_in: 1 hour
+
+# Generate attestation and scan for vulnerabilities
+security-scan:
+  stage: security-scan
+  image: ubuntu:24.04
+  dependencies:
+    - build
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: sigstore
+  before_script:
+    - apt-get update && apt-get install -y curl
+    - curl -sSL https://github.com/open-verix/provenix/releases/download/v${PROVENIX_VERSION}/provenix-linux-amd64 -o /usr/local/bin/provenix
+    - chmod +x /usr/local/bin/provenix
+    - provenix init
+  script:
+    - |
+      provenix attest myapp \
+        --format cyclonedx-json \
+        --output attestation.json \
+        --skip-transparency  # Don't publish to Rekor for non-production builds
+  artifacts:
+    paths:
+      - attestation.json
+    expire_in: 30 days
+
+# Check policy compliance
+policy-check:
+  stage: policy-check
+  image: ubuntu:24.04
+  dependencies:
+    - security-scan
+  before_script:
+    - apt-get update && apt-get install -y curl
+    - curl -sSL https://github.com/open-verix/provenix/releases/download/v${PROVENIX_VERSION}/provenix-linux-amd64 -o /usr/local/bin/provenix
+    - chmod +x /usr/local/bin/provenix
+  script:
+    # Generate detailed report
+    - provenix report attestation.json --format markdown --output SECURITY-REPORT.md
+
+    # Check against policy (fails if violations found)
+    - |
+      if ! provenix policy check --attestation attestation.json --config ${POLICY_CONFIG}; then
+        echo "❌ Security policy violations detected!"
+        echo "Review SECURITY-REPORT.md for details"
+        
+        # Generate VEX document for triage
+        provenix vex create attestation.json --output vex.json
+        
+        exit 1
+      fi
+
+    - echo "✅ All security policies passed"
+  artifacts:
+    when: always
+    paths:
+      - SECURITY-REPORT.md
+      - vex.json
+    expire_in: 90 days
+  allow_failure: false # Fail the pipeline if policy check fails
+
+# Deploy only if policy check passes
+deploy:
+  stage: deploy
+  image: curlimages/curl:latest
+  dependencies:
+    - build
+    - security-scan
+  only:
+    - tags
+  when: on_success # Only run if previous stages passed
+  script:
+    - echo "Deploying application..."
+    - |
+      curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+           --upload-file myapp \
+           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/myapp/${CI_COMMIT_TAG}/myapp"
+    - |
+      curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+           --upload-file attestation.json \
+           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/myapp/${CI_COMMIT_TAG}/attestation.json"

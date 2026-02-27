@@ -1,0 +1,105 @@
+# Example: Attest Docker Image Build
+#
+# This workflow builds a Docker image, pushes it to a registry,
+# and attests it with Provenix.
+
+name: Build and Attest Docker Image
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-attest:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # Keyless signing
+      contents: read
+      packages: write # Push to GHCR
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install Provenix
+        run: |
+          curl -sSL https://github.com/open-verix/provenix/releases/download/v0.1.0/provenix-linux-amd64 -o provenix
+          chmod +x provenix
+
+      - name: Initialize Provenix
+        run: ./provenix init
+
+      - name: Attest Docker image
+        run: |
+          IMAGE_WITH_DIGEST="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
+          ./provenix attest "${IMAGE_WITH_DIGEST}" \
+            --format cyclonedx-json \
+            --output attestation.json
+
+      - name: Verify attestation
+        run: ./provenix verify attestation.json
+
+      - name: Generate vulnerability report
+        run: |
+          ./provenix report attestation.json \
+            --format markdown \
+            --output SECURITY.md
+
+      - name: Upload attestation
+        uses: actions/upload-artifact@v4
+        with:
+          name: attestation
+          path: |
+            attestation.json
+            SECURITY.md
+
+      - name: Comment on PR with security report
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('SECURITY.md', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Security Report\n\n${report}`
+            });
