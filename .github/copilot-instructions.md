@@ -80,6 +80,7 @@ func generateSBOM() {
 - `manuals/` - Manual testing logs and temporary docs (`.gitignore` protected)
 
 **If documentation is needed:**
+
 - Ask user where to place it
 - Use `docs/` directory for official documentation
 - Respect existing file organization

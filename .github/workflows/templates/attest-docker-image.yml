@@ -1,0 +1,140 @@
+# Provenix Docker Image Attestation Template
+#
+# This reusable workflow attests Docker images built in your repository.
+# It generates SBOM, scans vulnerabilities, and creates signed attestations
+# with keyless signing via GitHub OIDC.
+#
+# Usage:
+#   Copy this file to .github/workflows/ in your repository and customize
+#   the 'image' and 'tag' inputs to match your Docker image.
+
+name: Attest Docker Image
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: "Docker image to attest (e.g., nginx:latest)"
+        required: true
+        type: string
+      output-name:
+        description: "Output attestation filename"
+        required: false
+        type: string
+        default: "attestation.json"
+      sbom-format:
+        description: "SBOM format (cyclonedx-json, spdx-json, syft-json)"
+        required: false
+        type: string
+        default: "cyclonedx-json"
+      skip-transparency:
+        description: "Skip Rekor transparency log (for air-gapped environments)"
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      PRIVATE_KEY:
+        description: "Private key for signing (optional, use for local signing)"
+        required: false
+
+  workflow_dispatch:
+    inputs:
+      image:
+        description: "Docker image to attest"
+        required: true
+        type: string
+      output-name:
+        description: "Output attestation filename"
+        required: false
+        type: string
+        default: "attestation.json"
+      sbom-format:
+        description: "SBOM format"
+        required: false
+        type: choice
+        options:
+          - cyclonedx-json
+          - spdx-json
+          - syft-json
+        default: cyclonedx-json
+
+jobs:
+  attest:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC token for keyless signing
+      contents: read # Read repository contents
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Install Provenix
+        run: |
+          # Option 1: Install from GitHub releases
+          curl -sSL https://github.com/open-verix/provenix/releases/download/v0.1.0/provenix-linux-amd64 -o provenix
+          chmod +x provenix
+
+          # Option 2: Build from source (uncomment if needed)
+          # git clone https://github.com/open-verix/provenix.git /tmp/provenix
+          # cd /tmp/provenix
+          # make build
+          # cp provenix $GITHUB_WORKSPACE/
+
+      - name: Initialize Provenix
+        run: |
+          ./provenix init --db-cache /tmp/grype-db
+
+      - name: Attest Docker Image (Keyless OIDC)
+        if: ${{ !inputs.skip-transparency && secrets.PRIVATE_KEY == '' }}
+        run: |
+          ./provenix attest ${{ inputs.image }} \
+            --format ${{ inputs.sbom-format }} \
+            --output ${{ inputs.output-name }}
+        env:
+          ACTIONS_ID_TOKEN_REQUEST_URL: ${{ env.ACTIONS_ID_TOKEN_REQUEST_URL }}
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Attest Docker Image (Local Key)
+        if: ${{ secrets.PRIVATE_KEY != '' }}
+        run: |
+          echo "${{ secrets.PRIVATE_KEY }}" > /tmp/key.pem
+          ./provenix attest ${{ inputs.image }} \
+            --format ${{ inputs.sbom-format }} \
+            --output ${{ inputs.output-name }} \
+            --key /tmp/key.pem
+          rm -f /tmp/key.pem
+
+      - name: Attest Docker Image (Air-Gapped)
+        if: ${{ inputs.skip-transparency }}
+        run: |
+          ./provenix attest ${{ inputs.image }} \
+            --format ${{ inputs.sbom-format }} \
+            --output ${{ inputs.output-name }} \
+            --skip-transparency
+
+      - name: Verify Attestation
+        run: |
+          ./provenix verify ${{ inputs.output-name }}
+
+      - name: Upload Attestation
+        uses: actions/upload-artifact@v4
+        with:
+          name: attestation-${{ github.run_id }}
+          path: ${{ inputs.output-name }}
+          retention-days: 90
+
+      - name: Check Policy Compliance
+        run: |
+          # Optional: Fail the build if policy violations are found
+          ./provenix policy check --attestation ${{ inputs.output-name }} || exit 1
+
+    outputs:
+      attestation-path:
+        description: "Path to generated attestation"
+        value: ${{ inputs.output-name }}
