@@ -6,6 +6,7 @@ VERSION?=dev
 GIT_COMMIT=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS=-ldflags "-s -w -X github.com/open-verix/provenix/internal/cli.Version=$(VERSION) -X github.com/open-verix/provenix/internal/cli.GitCommit=$(GIT_COMMIT) -X github.com/open-verix/provenix/internal/cli.BuildDate=$(BUILD_DATE)"
+BUILDFLAGS=-trimpath -buildvcs=false
 
 # UPX compression (optional - requires upx to be installed)
 # Install: brew install upx (macOS), apt-get install upx (Linux)
@@ -25,12 +26,13 @@ ifdef VERBOSE
 	@echo "Commit:     $(GIT_COMMIT)"
 	@echo "Build Date: $(BUILD_DATE)"
 	@echo "=========================================="
-	@go build $(LDFLAGS) -o $(BINARY_NAME) ./cmd/provenix
+	@go build $(BUILDFLAGS) $(LDFLAGS) -o $(BINARY_NAME) ./cmd/provenix
 	@echo "✅ Build successful: ./$(BINARY_NAME)"
+	@ls -lh $(BINARY_NAME)
 	@echo ""
 	@./$(BINARY_NAME) version 2>/dev/null || echo "Binary version: $(VERSION) ($(GIT_COMMIT))"
 else
-	@go build $(LDFLAGS) -o $(BINARY_NAME) ./cmd/provenix
+	@go build $(BUILDFLAGS) $(LDFLAGS) -o $(BINARY_NAME) ./cmd/provenix
 endif
 
 install: ## Install the binary to $(GOPATH)/bin
@@ -39,11 +41,11 @@ ifdef VERBOSE
 	@echo "Installing $(BINARY_NAME)..."
 	@echo "Version:    $(VERSION)"
 	@echo "=========================================="
-	@go install $(LDFLAGS) ./cmd/provenix
+	@go install $(BUILDFLAGS) $(LDFLAGS) ./cmd/provenix
 	@echo "✅ Installation successful"
 	@which $(BINARY_NAME)
 else
-	@go install $(LDFLAGS) ./cmd/provenix
+	@go install $(BUILDFLAGS) $(LDFLAGS) ./cmd/provenix
 endif
 
 test: ## Run unit tests
