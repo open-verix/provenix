@@ -74,6 +74,7 @@ func init() {
 	rootCmd.AddCommand(reportCmd)
 	rootCmd.AddCommand(vexCmd)
 	rootCmd.AddCommand(policyCmd)
+	rootCmd.AddCommand(historyCmd)
 }
 
 var versionCmd = &cobra.Command{
