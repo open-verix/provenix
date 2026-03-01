@@ -1,0 +1,21 @@
+{
+  "artifacts": [
+    {
+      "name": "nginx:latest",
+      "type": "image"
+    },
+    {
+      "name": "alpine:latest",
+      "type": "image"
+    },
+    {
+      "name": "busybox:latest",
+      "type": "image"
+    }
+  ],
+  "config": {
+    "parallel": 2,
+    "continue_on_error": true,
+    "output_dir": ".provenix/batch"
+  }
+}
