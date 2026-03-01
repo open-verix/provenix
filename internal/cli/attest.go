@@ -71,6 +71,13 @@ func init() {
 	attestCmd.Flags().String("config", "", "Path to provenix.yaml configuration file")
 	attestCmd.Flags().String("key", "", "Path to private key (for development)")
 	attestCmd.Flags().Bool("skip-transparency", false, "Skip Rekor transparency log publishing (keyless signing only)")
+	
+	// Private Sigstore instance flags
+	attestCmd.Flags().String("fulcio-url", "", "Fulcio URL (for private Sigstore instances)")
+	attestCmd.Flags().String("rekor-url", "", "Rekor URL (for private Sigstore instances)")
+	attestCmd.Flags().String("oidc-issuer", "", "OIDC issuer URL (for private Sigstore instances)")
+	attestCmd.Flags().String("tuf-root", "", "Path to TUF root.json (for private Sigstore instances)")
+	attestCmd.Flags().Bool("insecure-skip-verify", false, "Skip TLS verification (for testing private instances)")
 }
 
 func runAttest(cmd *cobra.Command, args []string) error {
@@ -82,6 +89,13 @@ func runAttest(cmd *cobra.Command, args []string) error {
 	configPath, _ := cmd.Flags().GetString("config")
 	keyPath, _ := cmd.Flags().GetString("key")
 	skipTransparency, _ := cmd.Flags().GetBool("skip-transparency")
+	
+	// Private Sigstore instance flags
+	fulcioURL, _ := cmd.Flags().GetString("fulcio-url")
+	rekorURL, _ := cmd.Flags().GetString("rekor-url")
+	oidcIssuer, _ := cmd.Flags().GetString("oidc-issuer")
+	tufRoot, _ := cmd.Flags().GetString("tuf-root")
+	insecureSkipVerify, _ := cmd.Flags().GetBool("insecure-skip-verify")
 	
 	fmt.Printf("🔍 Attesting artifact: %s\n", artifact)
 	
@@ -96,6 +110,23 @@ func runAttest(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		cfg = config.Default()
+	}
+	
+	// Override config with CLI flags
+	if fulcioURL != "" {
+		cfg.Signing.OIDC.FulcioURL = fulcioURL
+	}
+	if rekorURL != "" {
+		cfg.Rekor.URL = rekorURL
+	}
+	if oidcIssuer != "" {
+		cfg.Signing.OIDC.Issuer = oidcIssuer
+	}
+	if tufRoot != "" {
+		cfg.Rekor.TUFRoot = tufRoot
+	}
+	if insecureSkipVerify {
+		cfg.Rekor.InsecureSkipVerify = insecureSkipVerify
 	}
 	
 	// Override with CLI flags
