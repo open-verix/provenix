@@ -52,6 +52,8 @@ type SigningConfig struct {
 type OIDCConfig struct {
 	Provider  string `mapstructure:"provider"`
 	FulcioURL string `mapstructure:"fulcio-url"`
+	// Issuer is the OIDC issuer URL (required for private Sigstore instances)
+	Issuer string `mapstructure:"issuer"`
 }
 
 // KeyConfig configures local key-based signing.
@@ -65,6 +67,10 @@ type RekorConfig struct {
 	URL     string      `mapstructure:"url"`
 	Timeout int         `mapstructure:"timeout"`
 	Retry   RetryConfig `mapstructure:"retry"`
+	// TUFRoot is the path to TUF root.json for private Sigstore instances
+	TUFRoot string `mapstructure:"tuf-root"`
+	// InsecureSkipVerify skips TLS verification (for testing only)
+	InsecureSkipVerify bool `mapstructure:"insecure-skip-verify"`
 }
 
 // RetryConfig configures retry behavior.
@@ -118,6 +124,7 @@ func Default() *Config {
 			OIDC: OIDCConfig{
 				Provider:  "auto",
 				FulcioURL: "https://fulcio.sigstore.dev",
+				Issuer:    "",
 			},
 			Key: KeyConfig{
 				Path:        "",
@@ -132,6 +139,8 @@ func Default() *Config {
 				InitialDelay: 1,
 				MaxDelay:     10,
 			},
+			TUFRoot:            "",
+			InsecureSkipVerify: false,
 		},
 		Output: OutputConfig{
 			File:        "attestation.json",

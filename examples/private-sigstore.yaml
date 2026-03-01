@@ -1,0 +1,103 @@
+# Provenix Configuration for Private Sigstore Instance
+#
+# This example shows how to configure Provenix to use a private Sigstore deployment
+# instead of the public Sigstore infrastructure.
+#
+# Use case: Enterprise environments that require:
+# - Air-gapped or private networks
+# - Custom OIDC providers
+# - Internal transparency logs
+# - Compliance with data residency requirements
+
+version: v1
+
+# Signing configuration
+signing:
+  # Mode: keyless (OIDC) or key (local private key)
+  mode: keyless
+  
+  oidc:
+    # OIDC provider: auto, github, gitlab, google, or custom URL
+    provider: auto
+    
+    # Private Fulcio instance URL
+    # Public: https://fulcio.sigstore.dev
+    # Private: https://fulcio.example.com
+    fulcio-url: https://fulcio.example.com
+    
+    # OIDC issuer URL (required for private instances)
+    # This should match your identity provider
+    # Examples:
+    #   - https://token.actions.githubusercontent.com (GitHub Actions)
+    #   - https://gitlab.com (GitLab CI)
+    #   - https://accounts.google.com (Google)
+    #   - https://keycloak.example.com/realms/mycompany (Keycloak)
+    issuer: https://keycloak.example.com/realms/mycompany
+
+# Rekor transparency log configuration
+rekor:
+  # Private Rekor instance URL
+  # Public: https://rekor.sigstore.dev
+  # Private: https://rekor.example.com
+  url: https://rekor.example.com
+  
+  # Request timeout (seconds)
+  timeout: 30
+  
+  # Retry configuration
+  retry:
+    max-attempts: 3
+    initial-delay: 1
+    max-delay: 10
+  
+  # Path to TUF root.json for verifying Rekor public key
+  # Required for private Sigstore instances to establish trust
+  # Generate with: rekor-cli tuf init
+  tuf-root: /path/to/tuf/root.json
+  
+  # Skip TLS certificate verification (TESTING ONLY)
+  # DO NOT use in production - security risk
+  insecure-skip-verify: false
+
+# Vulnerability scanning
+vulnerabilities:
+  max_critical: 0
+  max_high: 0
+  max_medium: 10
+
+# License policy
+licenses:
+  allowed:
+    - MIT
+    - Apache-2.0
+    - BSD-2-Clause
+    - BSD-3-Clause
+  denied:
+    - GPL-3.0
+    - AGPL-3.0
+  warn_on_unknown: true
+
+# SBOM configuration
+sbom:
+  # Format: cyclonedx-json, spdx-json, syft-json
+  format: cyclonedx-json
+  require_checksum: true
+
+# Output configuration
+output:
+  file: attestation.json
+  format: json
+  pretty: true
+  include-sbom: true
+  include-scan: true
+
+# Local storage
+storage:
+  dir: .provenix/attestations
+  retention-days: 30
+
+# Logging
+logging:
+  level: info
+  format: text
+  timestamps: true
