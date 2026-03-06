@@ -1,0 +1,212 @@
+# GoReleaser Configuration for Provenix
+# https://goreleaser.com/customization/
+
+version: 2
+
+before:
+  hooks:
+    # Run tests before building
+    - go test ./...
+    - go mod tidy
+
+builds:
+  - id: provenix
+    main: ./cmd/provenix
+    binary: provenix
+    
+    # Target platforms
+    goos:
+      - linux
+      - darwin
+      - windows
+    
+    goarch:
+      - amd64
+      - arm64
+    
+    # Ignore combinations
+    ignore:
+      - goos: windows
+        goarch: arm64
+    
+    # Build flags for reproducibility
+    flags:
+      - -trimpath
+      - -buildvcs=false
+    
+    # Linker flags (version info)
+    ldflags:
+      - -s -w
+      - -X github.com/open-verix/provenix/internal/cli.Version={{.Version}}
+      - -X github.com/open-verix/provenix/internal/cli.GitCommit={{.ShortCommit}}
+      - -X github.com/open-verix/provenix/internal/cli.BuildDate={{.Date}}
+    
+    # Environment variables
+    env:
+      - CGO_ENABLED=0
+
+archives:
+  - id: provenix-archive
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    
+    format_overrides:
+      - goos: windows
+        format: zip
+    
+    files:
+      - README.md
+      - LICENSE
+      - docs/cli_specification.md
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: 'New Features'
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: 'Bug Fixes'
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: 'Performance Improvements'
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: 'Refactors'
+      regexp: '^.*?refactor(\([[:word:]]+\))??!?:.+$'
+      order: 3
+    - title: 'Documentation'
+      regexp: '^.*?docs(\([[:word:]]+\))??!?:.+$'
+      order: 4
+    - title: 'Other'
+      order: 999
+
+release:
+  github:
+    owner: open-verix
+    name: provenix
+  
+  # Release notes
+  name_template: "{{.ProjectName}} {{.Version}}"
+  
+  # Draft release (manual approval)
+  draft: false
+  
+  # Prerelease detection
+  prerelease: auto
+  
+  # Replace existing release (useful for re-running)
+  replace_existing_draft: true
+  
+  # Discussion category (optional)
+  # discussion_category_name: Releases
+
+# Homebrew tap (optional - for easy installation on macOS/Linux)
+brews:
+  - name: provenix
+    repository:
+      owner: open-verix
+      name: homebrew-tap
+      # Requires creating homebrew-tap repository first
+      # To skip: comment out this entire brews section
+    
+    # Caveats shown after installation
+    caveats: |
+      Provenix is a policy-driven software supply chain orchestrator.
+      
+      To get started:
+        provenix --help
+        provenix attest --help
+      
+      Documentation: https://github.com/open-verix/provenix
+    
+    homepage: "https://github.com/open-verix/provenix"
+    description: "Policy-driven software supply chain orchestrator with atomic evidence generation"
+    
+    license: "Apache-2.0"
+    
+    # Skip if homebrew-tap doesn't exist yet
+    skip_upload: auto
+
+# Docker images (optional - multi-arch support)
+dockers:
+  - image_templates:
+      - "ghcr.io/open-verix/provenix:{{ .Version }}-amd64"
+      - "ghcr.io/open-verix/provenix:latest-amd64"
+    use: buildx
+    goos: linux
+    goarch: amd64
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+    skip_push: auto
+  
+  - image_templates:
+      - "ghcr.io/open-verix/provenix:{{ .Version }}-arm64"
+      - "ghcr.io/open-verix/provenix:latest-arm64"
+    use: buildx
+    goos: linux
+    goarch: arm64
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+    skip_push: auto
+
+# Docker manifest for multi-arch images
+docker_manifests:
+  - name_template: "ghcr.io/open-verix/provenix:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/open-verix/provenix:{{ .Version }}-amd64"
+      - "ghcr.io/open-verix/provenix:{{ .Version }}-arm64"
+    skip_push: auto
+  
+  - name_template: "ghcr.io/open-verix/provenix:latest"
+    image_templates:
+      - "ghcr.io/open-verix/provenix:latest-amd64"
+      - "ghcr.io/open-verix/provenix:latest-arm64"
+    skip_push: auto
+
+# SBOM generation (experimental)
+sboms:
+  - id: provenix-sbom
+    artifacts: archive
+    documents:
+      - >-
+        {{ .ProjectName }}_
+        {{- .Version }}_
+        {{- .Os }}_
+        {{- .Arch }}.sbom.json
+
+# Announce to various platforms (optional)
+announce:
+  skip: true
+  # Uncomment to enable:
+  # twitter:
+  #   enabled: true
+  #   message_template: 'Provenix {{ .Tag }} is out! Check it out at {{ .ReleaseURL }}'
