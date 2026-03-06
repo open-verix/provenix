@@ -1,0 +1,244 @@
+name: Release Multi-Platform Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g., v0.1.0-alpha.2)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  goreleaser:
+    name: Release with GoReleaser
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history for changelog
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.7'
+          cache: true
+      
+      - name: Run tests
+        run: go test ./... -v -race
+      
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
+          retention-days: 30
+
+  verify-downloads:
+    name: Verify Release Downloads
+    needs: goreleaser
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+      
+      - name: List downloaded files
+        shell: bash
+        run: |
+          ls -lh
+          cat checksums.txt
+      
+      - name: Verify checksums (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          sha256sum -c checksums.txt || true
+      
+      - name: Verify checksums (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-Content checksums.txt | ForEach-Object {
+            $parts = $_ -split '  '
+            if ($parts.Length -eq 2) {
+              $hash = $parts[0]
+              $file = $parts[1]
+              if (Test-Path $file) {
+                $computed = (Get-FileHash -Algorithm SHA256 $file).Hash.ToLower()
+                if ($computed -eq $hash) {
+                  Write-Host "✓ $file : OK"
+                } else {
+                  Write-Host "✗ $file : FAILED"
+                }
+              }
+            }
+          }
+
+  test-binaries:
+    name: Test Released Binaries
+    needs: goreleaser
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_pattern: '*linux_amd64.tar.gz'
+          - os: macos-13  # Intel Mac
+            artifact_pattern: '*darwin_amd64.tar.gz'
+          - os: macos-latest  # Apple Silicon
+            artifact_pattern: '*darwin_arm64.tar.gz'
+          - os: windows-latest
+            artifact_pattern: '*windows_amd64.zip'
+    
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+      
+      - name: Extract binary (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          ARCHIVE=$(ls ${{ matrix.artifact_pattern }} | head -1)
+          echo "Extracting: $ARCHIVE"
+          tar -xzf "$ARCHIVE"
+          chmod +x provenix
+      
+      - name: Extract binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $archive = Get-ChildItem -Filter "${{ matrix.artifact_pattern }}" | Select-Object -First 1
+          Write-Host "Extracting: $($archive.Name)"
+          Expand-Archive -Path $archive.FullName -DestinationPath .
+      
+      - name: Test binary (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          ./provenix --version
+          ./provenix --help
+      
+      - name: Test binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./provenix.exe --version
+          ./provenix.exe --help
+
+  create-installation-guide:
+    name: Create Installation Guide Comment
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+      - name: Create installation guide
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = context.ref.replace('refs/tags/', '');
+            const body = `## 🎉 Provenix ${tag} Released!
+            
+            ### Installation
+            
+            #### macOS (Apple Silicon / M1/M2/M3/M4)
+            \`\`\`bash
+            curl -LO https://github.com/open-verix/provenix/releases/download/${tag}/provenix_${tag}_darwin_arm64.tar.gz
+            tar -xzf provenix_${tag}_darwin_arm64.tar.gz
+            sudo mv provenix /usr/local/bin/
+            provenix --version
+            \`\`\`
+            
+            #### macOS (Intel)
+            \`\`\`bash
+            curl -LO https://github.com/open-verix/provenix/releases/download/${tag}/provenix_${tag}_darwin_amd64.tar.gz
+            tar -xzf provenix_${tag}_darwin_amd64.tar.gz
+            sudo mv provenix /usr/local/bin/
+            provenix --version
+            \`\`\`
+            
+            #### Linux (amd64)
+            \`\`\`bash
+            curl -LO https://github.com/open-verix/provenix/releases/download/${tag}/provenix_${tag}_linux_amd64.tar.gz
+            tar -xzf provenix_${tag}_linux_amd64.tar.gz
+            sudo mv provenix /usr/local/bin/
+            provenix --version
+            \`\`\`
+            
+            #### Linux (arm64)
+            \`\`\`bash
+            curl -LO https://github.com/open-verix/provenix/releases/download/${tag}/provenix_${tag}_linux_arm64.tar.gz
+            tar -xzf provenix_${tag}_linux_arm64.tar.gz
+            sudo mv provenix /usr/local/bin/
+            provenix --version
+            \`\`\`
+            
+            #### Windows (PowerShell)
+            \`\`\`powershell
+            Invoke-WebRequest -Uri "https://github.com/open-verix/provenix/releases/download/${tag}/provenix_${tag}_windows_amd64.zip" -OutFile "provenix.zip"
+            Expand-Archive -Path provenix.zip -DestinationPath .
+            Move-Item provenix.exe C:\\Windows\\System32\\
+            provenix --version
+            \`\`\`
+            
+            ### Verify Checksums
+            
+            \`\`\`bash
+            curl -LO https://github.com/open-verix/provenix/releases/download/${tag}/checksums.txt
+            sha256sum -c checksums.txt
+            \`\`\`
+            
+            ### What's New
+            
+            See the [full changelog](https://github.com/open-verix/provenix/releases/tag/${tag}) for details.
+            `;
+            
+            // Update release description
+            const release = await github.rest.repos.getReleaseByTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag: tag
+            });
+            
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.data.id,
+              body: body
+            });

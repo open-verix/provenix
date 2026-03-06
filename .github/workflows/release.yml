@@ -1,0 +1,107 @@
+name: Build and Release (Simple)
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      matrix:
+        include:
+          # macOS
+          - os: darwin
+            arch: amd64
+            runs-on: macos-13
+          - os: darwin
+            arch: arm64
+            runs-on: macos-latest
+          # Linux
+          - os: linux
+            arch: amd64
+            runs-on: ubuntu-latest
+          - os: linux
+            arch: arm64
+            runs-on: ubuntu-latest
+          # Windows
+          - os: windows
+            arch: amd64
+            runs-on: windows-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.7'
+      
+      - name: Build
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          BINARY_NAME="provenix"
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            BINARY_NAME="provenix.exe"
+          fi
+          
+          go build -trimpath -buildvcs=false \
+            -ldflags="-s -w \
+              -X github.com/open-verix/provenix/internal/cli.Version=${VERSION} \
+              -X github.com/open-verix/provenix/internal/cli.GitCommit=${GITHUB_SHA::8}" \
+            -o "${BINARY_NAME}" ./cmd/provenix
+      
+      - name: Create archive
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          ARCHIVE_NAME="provenix_${VERSION}_${{ matrix.os }}_${{ matrix.arch }}"
+          
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            7z a "${ARCHIVE_NAME}.zip" provenix.exe README.md LICENSE
+          else
+            tar -czf "${ARCHIVE_NAME}.tar.gz" provenix README.md LICENSE
+          fi
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: provenix-${{ matrix.os }}-${{ matrix.arch }}
+          path: provenix_*
+  
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          find . -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec mv {} . \;
+          sha256sum *.tar.gz *.zip > checksums.txt
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/*.tar.gz
+            artifacts/*.zip
+            artifacts/checksums.txt
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
