@@ -15,26 +15,24 @@ permissions:
   security-events: write # Upload Trivy SARIF results to GitHub Security
 
 jobs:
-  build-and-test:
-    name: Build and Test
-    runs-on: ubuntu-24.04 # Pinned for reproducible builds
-
+  test:
+    name: Run Tests
+    runs-on: ubuntu-24.04
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Full history for version info
-
+      
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: "1.25.7"
           cache: true
-
+      
       - name: Run tests
         run: |
           go test ./... -v -race -coverprofile=coverage.txt -covermode=atomic
-
+      
       - name: Upload coverage
         id: codecov
         uses: codecov/codecov-action@v4
@@ -45,44 +43,94 @@ jobs:
           flags: unittests
           name: codecov-provenix
           fail_ci_if_error: false
-
+      
       - name: Warn if Codecov upload failed
         if: steps.codecov.outcome == 'failure'
         run: |
           echo "::warning::Codecov upload failed. This is optional for alpha releases."
-          echo "::warning::To enable coverage reporting, add CODECOV_TOKEN secret."
-          echo "::warning::See: https://docs.codecov.com/docs/codecov-tokens"
 
-      - name: Build Provenix (Reproducible)
+  build-multiplatform:
+    name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
+    runs-on: ${{ matrix.runs-on }}
+    needs: test
+    strategy:
+      matrix:
+        include:
+          # macOS
+          - goos: darwin
+            goarch: amd64
+            runs-on: macos-13
+          - goos: darwin
+            goarch: arm64
+            runs-on: macos-latest
+          # Linux
+          - goos: linux
+            goarch: amd64
+            runs-on: ubuntu-latest
+          - goos: linux
+            goarch: arm64
+            runs-on: ubuntu-latest
+          # Windows
+          - goos: windows
+            goarch: amd64
+            runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.7"
+          cache: true
+      
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        shell: bash
         run: |
-          # Reproducible build with version info
           VERSION="${GITHUB_REF_NAME:-dev}"
           COMMIT="${GITHUB_SHA::8}"
           BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
+          
+          BINARY_NAME="provenix"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            BINARY_NAME="provenix.exe"
+          fi
+          
           go build -trimpath -buildvcs=false \
             -ldflags="-s -w \
-              -X main.version=${VERSION} \
-              -X main.commit=${COMMIT} \
-              -X main.buildTime=${BUILD_TIME}" \
-            -o provenix ./cmd/provenix
-
-      - name: Verify binary
+              -X github.com/open-verix/provenix/internal/cli.Version=${VERSION} \
+              -X github.com/open-verix/provenix/internal/cli.GitCommit=${COMMIT}" \
+            -o "${BINARY_NAME}" ./cmd/provenix
+      
+      - name: Verify binary (Unix)
+        if: matrix.goos != 'windows'
         run: |
+          chmod +x provenix
           ./provenix --version
-          ./provenix --help
-
+      
+      - name: Verify binary (Windows)
+        if: matrix.goos == 'windows'
+        shell: bash
+        run: |
+          ./provenix.exe --version
+      
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: provenix-binary-${{ github.sha }}
-          path: provenix
+          name: provenix-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: provenix${{ matrix.goos == 'windows' && '.exe' || '' }}
           retention-days: 30
 
   attest-self:
     name: Dog Fooding - Attest Provenix with Itself
     runs-on: ubuntu-24.04 # Pinned for reproducible builds
-    needs: build-and-test
+    needs: build-multiplatform
     if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main')
     permissions:
       id-token: write # Required for OIDC token
@@ -97,10 +145,10 @@ jobs:
         with:
           go-version: "1.25.7"
 
-      - name: Download binary
+      - name: Download Linux binary
         uses: actions/download-artifact@v4
         with:
-          name: provenix-binary-${{ github.sha }}
+          name: provenix-linux-amd64
 
       - name: Make binary executable
         run: chmod +x provenix
@@ -192,43 +240,141 @@ jobs:
           path: attestation.json
           retention-days: 90
 
-      - name: Attach to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+  package-release:
+    name: Package Release Archives
+    runs-on: ubuntu-latest
+    needs: [build-multiplatform, attest-self]
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      
+      - name: Create release archives
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          mkdir -p release
+          
+          # Function to create archive
+          create_archive() {
+            local GOOS=$1
+            local GOARCH=$2
+            local ARCHIVE_NAME="provenix_${VERSION}_${GOOS}_${GOARCH}"
+            
+            echo "Creating archive for ${GOOS}-${GOARCH}..."
+            
+            if [ "$GOOS" = "windows" ]; then
+              # Windows: ZIP archive
+              cd "artifacts/provenix-${GOOS}-${GOARCH}"
+              zip "../../release/${ARCHIVE_NAME}.zip" provenix.exe ../../README.md ../../LICENSE 2>/dev/null || \
+                zip "../../release/${ARCHIVE_NAME}.zip" provenix.exe ../../README.md
+              cd ../..
+            else
+              # Unix: tar.gz archive
+              cd "artifacts/provenix-${GOOS}-${GOARCH}"
+              tar -czf "../../release/${ARCHIVE_NAME}.tar.gz" provenix ../../README.md ../../LICENSE 2>/dev/null || \
+                tar -czf "../../release/${ARCHIVE_NAME}.tar.gz" provenix ../../README.md
+              cd ../..
+            fi
+          }
+          
+          # Create archives for all platforms
+          create_archive darwin amd64
+          create_archive darwin arm64
+          create_archive linux amd64
+          create_archive linux arm64
+          create_archive windows amd64
+      
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum * > checksums.txt
+          cat checksums.txt
+      
+      - name: Copy attestation
+        run: |
+          cp artifacts/provenix-attestation-${{ github.sha }}/attestation.json release/
+      
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: release/*
+          retention-days: 90
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: package-release
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: release
+      
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            provenix
-            attestation.json
+          files: release/*
+          generate_release_notes: true
           body: |
             ## Provenix ${{ github.ref_name }}
 
-            This release includes:
-            - Provenix binary (reproducible build)
-            - Attestation (SBOM + Vulnerability Scan + Signature)
+            ### Multi-Platform Binaries
+
+            Download the appropriate binary for your platform:
+
+            - **macOS (Intel):** `provenix_${{ github.ref_name }}_darwin_amd64.tar.gz`
+            - **macOS (Apple Silicon):** `provenix_${{ github.ref_name }}_darwin_arm64.tar.gz`
+            - **Linux (amd64):** `provenix_${{ github.ref_name }}_linux_amd64.tar.gz`
+            - **Linux (arm64):** `provenix_${{ github.ref_name }}_linux_arm64.tar.gz`
+            - **Windows:** `provenix_${{ github.ref_name }}_windows_amd64.zip`
+
+            ### Quick Install
+
+            **macOS / Linux:**
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/open-verix/provenix/main/scripts/install.sh | bash
+            ```
+
+            **Windows (PowerShell):**
+            ```powershell
+            iwr -useb https://raw.githubusercontent.com/open-verix/provenix/main/scripts/install.ps1 | iex
+            ```
 
             ### Verification
 
             ```bash
-            # Download artifacts
-            wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/provenix
-            wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/attestation.json
+            # Verify checksum
+            sha256sum -c checksums.txt
 
             # Verify attestation (future)
             ./provenix verify attestation.json
             ```
 
-            ### Dog Fooding
+            ### Attestation
 
-            This attestation was generated by Provenix itself, demonstrating:
+            This release includes `attestation.json` generated by Provenix itself (dog fooding):
             - ✅ Atomic evidence generation
-            - ✅ SBOM transparency
+            - ✅ SBOM transparency (CycloneDX)
             - ✅ Vulnerability disclosure
-            - ✅ Cryptographic signing
+            - ✅ Cryptographic signing (keyless)
 
   security-scan:
     name: Security Scanning
     runs-on: ubuntu-24.04 # Pinned for reproducible builds
-    needs: build-and-test
+    needs: test
 
     steps:
       - name: Checkout code
