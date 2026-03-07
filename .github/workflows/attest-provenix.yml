@@ -59,7 +59,7 @@ jobs:
           # macOS
           - goos: darwin
             goarch: amd64
-            runs-on: macos-13
+            runs-on: macos-12
           - goos: darwin
             goarch: arm64
             runs-on: macos-latest
@@ -123,7 +123,7 @@ jobs:
         # Only run on native builds (not cross-compiled)
         # Linux arm64 is cross-compiled on ubuntu-latest (amd64), so skip it
         if: |
-          (matrix.goos == 'darwin' && matrix.goarch == 'amd64' && matrix.runs-on == 'macos-13') ||
+          (matrix.goos == 'darwin' && matrix.goarch == 'amd64' && matrix.runs-on == 'macos-12') ||
           (matrix.goos == 'darwin' && matrix.goarch == 'arm64' && matrix.runs-on == 'macos-latest') ||
           (matrix.goos == 'linux' && matrix.goarch == 'amd64' && matrix.runs-on == 'ubuntu-latest') ||
           (matrix.goos == 'windows' && matrix.goarch == 'amd64' && matrix.runs-on == 'windows-latest')
