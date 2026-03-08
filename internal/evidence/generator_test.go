@@ -112,8 +112,8 @@ func TestGenerateSuccess(t *testing.T) {
 	if statement.Type != "https://in-toto.io/Statement/v1" {
 		t.Errorf("expected statement type 'https://in-toto.io/Statement/v1', got: %s", statement.Type)
 	}
-	if statement.PredicateType != "https://provenix.dev/attestation/v1" {
-		t.Errorf("expected predicate type 'https://provenix.dev/attestation/v1', got: %s", statement.PredicateType)
+	if statement.PredicateType != "https://open-verix.github.io/provenix/attestation/v1" {
+		t.Errorf("expected predicate type 'https://open-verix.github.io/provenix/attestation/v1', got: %s", statement.PredicateType)
 	}
 	if len(statement.Subject) == 0 {
 		t.Error("expected at least one subject")
@@ -228,8 +228,8 @@ func TestCreateStatement(t *testing.T) {
 	if stmt.Type != "https://in-toto.io/Statement/v1" {
 		t.Errorf("expected statement type 'https://in-toto.io/Statement/v1', got: %s", stmt.Type)
 	}
-	if stmt.PredicateType != "https://provenix.dev/attestation/v1" {
-		t.Errorf("expected predicate type 'https://provenix.dev/attestation/v1', got: %s", stmt.PredicateType)
+	if stmt.PredicateType != "https://open-verix.github.io/provenix/attestation/v1" {
+		t.Errorf("expected predicate type 'https://open-verix.github.io/provenix/attestation/v1', got: %s", stmt.PredicateType)
 	}
 	if len(stmt.Subject) != 1 {
 		t.Fatalf("expected 1 subject, got: %d", len(stmt.Subject))

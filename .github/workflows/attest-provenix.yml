@@ -352,7 +352,7 @@ jobs:
             - **Linux (amd64):** `provenix_${{ github.ref_name }}_linux_amd64.tar.gz`
             - **Linux (arm64):** `provenix_${{ github.ref_name }}_linux_arm64.tar.gz`
             - **Windows:** `provenix_${{ github.ref_name }}_windows_amd64.zip`
-            
+
             **Note:** macOS Intel (amd64) builds are no longer provided due to GitHub Actions runner availability. Use Rosetta 2 on Intel Macs or build from source.
 
             ### Quick Install

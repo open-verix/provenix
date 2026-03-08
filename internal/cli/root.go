@@ -56,7 +56,13 @@ Documentation: https://github.com/open-verix/provenix/docs
 
 // Execute runs the root command
 func Execute() error {
-	return rootCmd.Execute()
+	err := rootCmd.Execute()
+	// Handle ExitError to ensure proper exit codes
+	if ee, ok := err.(*ExitError); ok {
+		// Return the ExitError so main() can extract the code
+		return ee
+	}
+	return err
 }
 
 func init() {

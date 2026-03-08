@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -86,9 +87,48 @@ func runVEXGenerate(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to read attestation file: %w", err)
 		}
 
-		ev = &evidence.Evidence{}
-		if err := json.Unmarshal(data, ev); err != nil {
-			return fmt.Errorf("failed to parse attestation: %w", err)
+		// Try to parse as attestation bundle first (new format with statementBase64)
+		var bundle struct {
+			StatementBase64 string `json:"statementBase64"`
+		}
+		if err := json.Unmarshal(data, &bundle); err == nil && bundle.StatementBase64 != "" {
+			// Decode base64 statement
+			stmtBytes, err := base64.StdEncoding.DecodeString(bundle.StatementBase64)
+			if err != nil {
+				return fmt.Errorf("failed to decode statement: %w", err)
+			}
+			
+			// Parse in-toto statement
+			var statement struct {
+				Subject []struct {
+					Name   string            `json:"name"`
+					Digest map[string]string `json:"digest"`
+				} `json:"subject"`
+				Predicate json.RawMessage `json:"predicate"`
+			}
+			if err := json.Unmarshal(stmtBytes, &statement); err != nil {
+				return fmt.Errorf("failed to parse statement: %w", err)
+			}
+			
+			// Extract evidence from predicate
+			ev = &evidence.Evidence{}
+			if err := json.Unmarshal(statement.Predicate, ev); err != nil {
+				return fmt.Errorf("failed to parse evidence: %w", err)
+			}
+			
+			// Extract artifact name and digest from subject
+			if len(statement.Subject) > 0 {
+				ev.Artifact = statement.Subject[0].Name
+				if sha256, ok := statement.Subject[0].Digest["sha256"]; ok {
+					ev.ArtifactDigest = "sha256:" + sha256
+				}
+			}
+		} else {
+			// Try old format (direct Evidence structure)
+			ev = &evidence.Evidence{}
+			if err := json.Unmarshal(data, ev); err != nil {
+				return fmt.Errorf("failed to parse attestation: %w", err)
+			}
 		}
 
 		fmt.Fprintf(os.Stderr, "📄 Loaded attestation for: %s\n", ev.Artifact)
@@ -164,9 +204,15 @@ func generateVEXDocument(ev *evidence.Evidence, format string) (interface{}, err
 }
 
 func generateOpenVEX(ev *evidence.Evidence) (*VEXDocument, error) {
+	// Generate unique VEX document ID using URN format (RFC 4122)
+	// This ensures no reliance on external domains
+	vexID := fmt.Sprintf("urn:provenix:vex:%s:%d", 
+		ev.ArtifactDigest, 
+		time.Now().Unix())
+	
 	doc := &VEXDocument{
 		Context:   "https://openvex.dev/ns/v0.2.0",
-		ID:        fmt.Sprintf("https://provenix.dev/vex/%s", ev.ArtifactDigest),
+		ID:        vexID,
 		Author:    "Provenix",
 		Timestamp: time.Now().Format(time.RFC3339),
 		Version:   "1",

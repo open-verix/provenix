@@ -40,12 +40,17 @@ func (e *Engine) Evaluate(ctx context.Context, ev *evidence.Evidence) (*Result, 
 		result.Warnings = append(result.Warnings, warnings...)
 	}
 
+	// TODO(Phase 6): Re-enable license policy evaluation after implementing --policy-check flag in attest command
+	// See: docs/post-mvp-roadmap.md - License Policy Integration
+	// Current blocker: Format mismatch between attest output (in-toto attestation) and policy check input (Evidence struct)
+	// Planned implementation: Add --policy-check flag to attest command for inline policy evaluation
+	//
 	// Evaluate license policies
-	if e.config.Licenses != nil {
-		violations, warnings := e.evaluateLicenses(ev)
-		result.Violations = append(result.Violations, violations...)
-		result.Warnings = append(result.Warnings, warnings...)
-	}
+	// if e.config.Licenses != nil {
+	// 	violations, warnings := e.evaluateLicenses(ev)
+	// 	result.Violations = append(result.Violations, violations...)
+	// 	result.Warnings = append(result.Warnings, warnings...)
+	// }
 
 	// Evaluate SBOM policies
 	if e.config.SBOM != nil {

@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -311,8 +313,32 @@ func loadBatchInput(path string) (BatchInput, error) {
 }
 
 func loadBatchInputFromStdin() (BatchInput, error) {
-	// TODO: Implement stdin reading
-	return BatchInput{}, fmt.Errorf("stdin input not yet implemented")
+	scanner := bufio.NewScanner(os.Stdin)
+	var artifacts []ArtifactSpec
+	
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		
+		artifacts = append(artifacts, ArtifactSpec{
+			Name: line,
+		})
+	}
+	
+	if err := scanner.Err(); err != nil {
+		return BatchInput{}, fmt.Errorf("failed to read stdin: %w", err)
+	}
+	
+	if len(artifacts) == 0 {
+		return BatchInput{}, fmt.Errorf("no artifacts provided in stdin")
+	}
+	
+	return BatchInput{
+		Artifacts: artifacts,
+	}, nil
 }
 
 func sanitizeFilename(name string) string {

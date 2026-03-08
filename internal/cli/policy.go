@@ -31,8 +31,9 @@ var policyCheckCmd = &cobra.Command{
 This command loads policy configuration (from --config or provenix.yaml)
 and evaluates the provided evidence file. It checks:
 - Vulnerability thresholds (max critical/high/medium)
-- License compliance (allowed/denied lists)
 - SBOM requirements (format, package count)
+
+Note: License compliance is currently disabled (will be re-enabled in Phase 6).
 
 Exit Codes:
   0 - Policy check passed (no violations)
@@ -57,9 +58,7 @@ var policyInitCmd = &cobra.Command{
 
 This command generates a provenix.yaml file with sensible defaults:
 - Max 0 critical/high vulnerabilities, max 10 medium
-- Common permissive licenses allowed (MIT, Apache-2.0, BSD, ISC)
-- Copyleft licenses denied (GPL-3.0, AGPL-3.0)
-- Warn on unknown licenses
+- SBOM checksum requirement
 
 You can customize the generated file for your project's needs.`,
 	Example: `  # Create provenix.yaml in current directory
@@ -180,7 +179,6 @@ func runPolicyInit(cmd *cobra.Command, args []string) error {
 	cmd.Printf("Created policy configuration: %s\n", outputPath)
 	cmd.Println("\nReview and customize the configuration for your project:")
 	cmd.Printf("  - Adjust vulnerability thresholds under 'vulnerabilities'\n")
-	cmd.Printf("  - Modify allowed/denied licenses under 'licenses'\n")
 	cmd.Printf("  - Set SBOM requirements under 'sbom'\n")
 	cmd.Printf("\nRun 'provenix policy validate %s' to verify your changes.\n", outputPath)
 

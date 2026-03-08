@@ -131,7 +131,7 @@ func CreateStatement(
 	statement := &Statement{
 		Type:          "https://in-toto.io/Statement/v1",
 		Subject:       []Subject{subject},
-		PredicateType: "https://provenix.dev/attestation/v1",
+		PredicateType: "https://open-verix.github.io/provenix/attestation/v1",
 		Predicate:     predicate,
 	}
 

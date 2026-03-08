@@ -264,6 +264,8 @@ func runAttest(cmd *cobra.Command, args []string) error {
 	fmt.Printf("   provenix publish %s\n", savePath)
 	fmt.Printf("\n⚠️  Partial Success (exit code: %d)\n", ExitPartialSuccess)
 	
+	// Return error to trigger exit code handling
+	// Cobra will not automatically use our exit code, so we need ExitError
 	return &ExitError{Code: ExitPartialSuccess, Err: fmt.Errorf("rekor publishing unavailable")}
 }
 

@@ -1,4 +1,4 @@
-.PHONY: help build test lint clean install run
+.PHONY: help build test lint clean install run build-all release-local release-snapshot
 
 # Variables
 BINARY_NAME=provenix
@@ -134,6 +134,43 @@ size-analysis: ## Analyze binary size breakdown
 	@go list -m all | head -20
 	@echo ""
 	@echo "Total dependencies: $$(go list -m all | wc -l | tr -d ' ')"
+
+build-all: ## Build for all platforms (requires GoReleaser)
+	@echo "Building for all platforms..."
+	@which goreleaser > /dev/null 2>&1 || (echo "❌ GoReleaser not installed. Install: brew install goreleaser" && exit 1)
+	@goreleaser build --snapshot --clean
+	@echo ""
+	@echo "✅ Multi-platform builds complete:"
+	@ls -lh dist/*/$(BINARY_NAME)* 2>/dev/null || ls -lh dist/
+
+release-local: ## Test release locally with GoReleaser
+	@echo "Testing release process locally (no publishing)..."
+	@which goreleaser > /dev/null 2>&1 || (echo "❌ GoReleaser not installed. Install: brew install goreleaser" && exit 1)
+	@goreleaser release --snapshot --clean --skip=publish
+	@echo ""
+	@echo "✅ Release test complete. Check dist/ directory:"
+	@ls -lh dist/*.tar.gz dist/*.zip 2>/dev/null || ls -lh dist/
+
+release-snapshot: ## Create snapshot release (version: X.Y.Z-next)
+	@echo "Creating snapshot release..."
+	@which goreleaser > /dev/null 2>&1 || (echo "❌ GoReleaser not installed. Install: brew install goreleaser" && exit 1)
+	@goreleaser release --snapshot --clean
+	@echo "✅ Snapshot release created"
+
+install-goreleaser: ## Install GoReleaser
+	@echo "Installing GoReleaser..."
+	@if [[ "$$(uname)" == "Darwin" ]]; then \
+		brew install goreleaser; \
+	elif [[ "$$(uname)" == "Linux" ]]; then \
+		echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" | sudo tee /etc/apt/sources.list.d/goreleaser.list; \
+		sudo apt update; \
+		sudo apt install goreleaser; \
+	else \
+		echo "Please install GoReleaser manually: https://goreleaser.com/install/"; \
+		exit 1; \
+	fi
+	@echo "✅ GoReleaser installed"
+	@goreleaser --version
 
 # Removed - 'build' is now quiet by default, use 'build-info' or VERBOSE=1 for output
 

@@ -47,6 +47,9 @@ manuals/
 
 # Test artifacts (should not be committed)
 provenix-stripped
+provenix-*
+*.tar.gz
+*.zip
 my-policy.yaml
 provenix.yaml
 vex.json

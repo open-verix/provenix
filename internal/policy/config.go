@@ -126,7 +126,7 @@ func DefaultConfig() *Config {
 	maxHigh := 0
 	maxMedium := 10
 
-	return &Config{
+		return &Config{
 		Version: "v1",
 		Vulnerabilities: &VulnerabilityPolicy{
 			MaxCritical: &maxCritical,
@@ -136,17 +136,20 @@ func DefaultConfig() *Config {
 			IgnoreIDs:   []string{},
 			FailOnAny:   false,
 		},
-		Licenses: &LicensePolicy{
-			AllowedLicenses: []string{
-				"MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause",
-				"ISC", "Unlicense", "CC0-1.0",
-			},
-			DeniedLicenses: []string{
-				"GPL-3.0", "AGPL-3.0", // Copyleft licenses (often restricted in commercial use)
-			},
-			RequireAllPackages: false,
-			WarnOnUnknown:      true,
-		},
+		// TODO(Phase 6): License policy - currently not functional
+		// Will be re-enabled when --policy-check flag is implemented in attest command
+		Licenses: nil,
+		// Licenses: &LicensePolicy{
+		// 	AllowedLicenses: []string{
+		// 		"MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause",
+		// 		"ISC", "Unlicense", "CC0-1.0",
+		// 	},
+		// 	DeniedLicenses: []string{
+		// 		"GPL-3.0", "AGPL-3.0", // Copyleft licenses (often restricted in commercial use)
+		// 	},
+		// 	RequireAllPackages: false,
+		// 	WarnOnUnknown:      true,
+		// },
 		SBOM: &SBOMPolicy{
 			RequiredFormat:  "", // Any format is acceptable
 			MinPackages:     0,

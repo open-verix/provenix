@@ -30,7 +30,7 @@ type Evidence struct {
 	SBOM *sbom.SBOM `json:"sbom"`
 
 	// VulnerabilityReport contains the vulnerability scan results
-	VulnerabilityReport *scanner.Report `json:"vulnerability_report"`
+	VulnerabilityReport *scanner.Report `json:"vulnerabilityReport"`
 
 	// Statement is the in-toto attestation statement
 	Statement []byte `json:"statement"`

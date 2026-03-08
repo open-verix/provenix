@@ -66,7 +66,7 @@ func TestVerify_KeyBased(t *testing.T) {
 	statement := map[string]interface{}{
 		"_type":         "https://in-toto.io/Statement/v1",
 		"subject":       []map[string]interface{}{{"name": "test-artifact", "digest": map[string]string{"sha256": "abc123"}}},
-		"predicateType": "https://provenix.dev/attestation/v1",
+		"predicateType": "https://open-verix.github.io/provenix/attestation/v1",
 		"predicate":     map[string]interface{}{"test": "data"},
 	}
 
@@ -145,7 +145,7 @@ func TestVerify_InvalidSignature(t *testing.T) {
 	statement := map[string]interface{}{
 		"_type":         "https://in-toto.io/Statement/v1",
 		"subject":       []map[string]interface{}{{"name": "test-artifact", "digest": map[string]string{"sha256": "abc123"}}},
-		"predicateType": "https://provenix.dev/attestation/v1",
+		"predicateType": "https://open-verix.github.io/provenix/attestation/v1",
 		"predicate":     map[string]interface{}{"test": "data"},
 	}
 
@@ -223,7 +223,7 @@ func TestVerify_MissingPublicKeyAndCertificate(t *testing.T) {
 	statement := map[string]interface{}{
 		"_type":         "https://in-toto.io/Statement/v1",
 		"subject":       []map[string]interface{}{{"name": "test", "digest": map[string]string{"sha256": "abc"}}},
-		"predicateType": "https://provenix.dev/attestation/v1",
+		"predicateType": "https://open-verix.github.io/provenix/attestation/v1",
 		"predicate":     map[string]interface{}{},
 	}
 
