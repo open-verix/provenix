@@ -288,13 +288,13 @@ jobs:
             if [ "$GOOS" = "windows" ]; then
               # Windows: ZIP archive
               cd "${ARTIFACT_DIR}"
-              zip "../../../release/${ARCHIVE_NAME}.zip" provenix.exe README.md
-              cd ../../..
+              zip "../../release/${ARCHIVE_NAME}.zip" provenix.exe README.md
+              cd ../..
             else
               # Unix: tar.gz archive
               cd "${ARTIFACT_DIR}"
-              tar -czf "../../../release/${ARCHIVE_NAME}.tar.gz" provenix README.md
-              cd ../../..
+              tar -czf "../../release/${ARCHIVE_NAME}.tar.gz" provenix README.md
+              cd ../..
             fi
           }
 
