@@ -56,10 +56,7 @@ jobs:
     strategy:
       matrix:
         include:
-          # macOS
-          - goos: darwin
-            goarch: amd64
-            runs-on: macos-12
+          # macOS (Apple Silicon only - Intel runners deprecated)
           - goos: darwin
             goarch: arm64
             runs-on: macos-latest
@@ -123,7 +120,6 @@ jobs:
         # Only run on native builds (not cross-compiled)
         # Linux arm64 is cross-compiled on ubuntu-latest (amd64), so skip it
         if: |
-          (matrix.goos == 'darwin' && matrix.goarch == 'amd64' && matrix.runs-on == 'macos-12') ||
           (matrix.goos == 'darwin' && matrix.goarch == 'arm64' && matrix.runs-on == 'macos-latest') ||
           (matrix.goos == 'linux' && matrix.goarch == 'amd64' && matrix.runs-on == 'ubuntu-latest') ||
           (matrix.goos == 'windows' && matrix.goarch == 'amd64' && matrix.runs-on == 'windows-latest')
@@ -303,7 +299,6 @@ jobs:
           }
 
           # Create archives for all platforms
-          create_archive darwin amd64
           create_archive darwin arm64
           create_archive linux amd64
           create_archive linux arm64
@@ -353,11 +348,12 @@ jobs:
 
             Download the appropriate binary for your platform:
 
-            - **macOS (Intel):** `provenix_${{ github.ref_name }}_darwin_amd64.tar.gz`
             - **macOS (Apple Silicon):** `provenix_${{ github.ref_name }}_darwin_arm64.tar.gz`
             - **Linux (amd64):** `provenix_${{ github.ref_name }}_linux_amd64.tar.gz`
             - **Linux (arm64):** `provenix_${{ github.ref_name }}_linux_arm64.tar.gz`
             - **Windows:** `provenix_${{ github.ref_name }}_windows_amd64.zip`
+            
+            **Note:** macOS Intel (amd64) builds are no longer provided due to GitHub Actions runner availability. Use Rosetta 2 on Intel Macs or build from source.
 
             ### Quick Install
 
