@@ -1,0 +1,103 @@
+# .goreleaser.yaml
+# GoReleaser configuration for Provenix
+# Docs: https://goreleaser.com
+version: 2
+
+project_name: provenix
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  - id: provenix
+    main: ./cmd/provenix
+    binary: provenix
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -buildvcs=false
+    ldflags:
+      - -s -w
+      - -X github.com/open-verix/provenix/internal/cli.Version={{.Version}}
+      - -X github.com/open-verix/provenix/internal/cli.GitCommit={{.Commit}}
+      - -X github.com/open-verix/provenix/internal/cli.BuildDate={{.Date}}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      # macOS Intel builds removed: GitHub Actions runner unavailability
+      # Intel Mac users: use Rosetta 2 or build from source
+      - goos: darwin
+        goarch: amd64
+      # Windows arm64 not yet validated
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: provenix
+    ids:
+      - provenix
+    name_template: "provenix_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: "New Features"
+      regexp: "^feat"
+      order: 0
+    - title: "Bug Fixes"
+      regexp: "^fix"
+      order: 1
+    - title: "Security"
+      regexp: "^security"
+      order: 2
+    - title: "Other"
+      order: 999
+
+release:
+  github:
+    owner: open-verix
+    name: provenix
+  name_template: "{{.ProjectName}} {{.Version}}"
+  draft: false
+  prerelease: auto
+
+# Signs the checksums file with cosign (keyless, for dogfooding)
+# signs:
+#   - cmd: cosign
+#     args:
+#       - sign-blob
+#       - --yes
+#       - --output-signature=${signature}
+#       - ${artifact}
+#     artifacts: checksum
+#     output: true

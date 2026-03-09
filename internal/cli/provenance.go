@@ -52,8 +52,6 @@ Exit Codes:
 }
 
 func init() {
-	rootCmd.AddCommand(proveCmd)
-
 	proveCmd.Flags().StringVarP(&provenanceOutput, "output", "o", "",
 		"Output file path (default: stdout)")
 	proveCmd.Flags().StringVar(&provenanceType, "type", "container",
