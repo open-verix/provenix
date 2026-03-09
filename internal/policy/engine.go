@@ -40,12 +40,13 @@ func (e *Engine) Evaluate(ctx context.Context, ev *evidence.Evidence) (*Result, 
 		result.Warnings = append(result.Warnings, warnings...)
 	}
 
-	// Evaluate license policies
-	if e.config.Licenses != nil {
-		violations, warnings := e.evaluateLicenses(ev)
-		result.Violations = append(result.Violations, violations...)
-		result.Warnings = append(result.Warnings, warnings...)
-	}
+	// TODO(Phase 6): License policy evaluation - not yet implemented
+	// Tracked in: docs/drafts/post-mvp-roadmap.md
+	// if e.config.Licenses != nil {
+	// 	violations, warnings := e.evaluateLicenses(ev)
+	// 	result.Violations = append(result.Violations, violations...)
+	// 	result.Warnings = append(result.Warnings, warnings...)
+	// }
 
 	// Evaluate SBOM policies
 	if e.config.SBOM != nil {

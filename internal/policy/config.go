@@ -136,15 +136,9 @@ func DefaultConfig() *Config {
 			IgnoreIDs:   []string{},
 			FailOnAny:   false,
 		},
-		Licenses: &LicensePolicy{
-			AllowedLicenses: []string{
-				"MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause",
-				"ISC", "Unlicense", "CC0-1.0",
-			},
-			DeniedLicenses:     []string{},
-			RequireAllPackages: false,
-			WarnOnUnknown:      true,
-		},
+		// TODO(Phase 6): License policy - not yet implemented
+		// Will be enabled when license evaluation is implemented in engine.go
+		Licenses: nil,
 		SBOM: &SBOMPolicy{
 			RequiredFormat:  "", // Any format is acceptable
 			MinPackages:     0,
