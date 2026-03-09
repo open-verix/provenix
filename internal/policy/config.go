@@ -136,20 +136,15 @@ func DefaultConfig() *Config {
 			IgnoreIDs:   []string{},
 			FailOnAny:   false,
 		},
-		// TODO(Phase 6): License policy - currently not functional
-		// Will be re-enabled when --policy-check flag is implemented in attest command
-		Licenses: nil,
-		// Licenses: &LicensePolicy{
-		// 	AllowedLicenses: []string{
-		// 		"MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause",
-		// 		"ISC", "Unlicense", "CC0-1.0",
-		// 	},
-		// 	DeniedLicenses: []string{
-		// 		"GPL-3.0", "AGPL-3.0", // Copyleft licenses (often restricted in commercial use)
-		// 	},
-		// 	RequireAllPackages: false,
-		// 	WarnOnUnknown:      true,
-		// },
+		Licenses: &LicensePolicy{
+			AllowedLicenses: []string{
+				"MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause",
+				"ISC", "Unlicense", "CC0-1.0",
+			},
+			DeniedLicenses:     []string{},
+			RequireAllPackages: false,
+			WarnOnUnknown:      true,
+		},
 		SBOM: &SBOMPolicy{
 			RequiredFormat:  "", // Any format is acceptable
 			MinPackages:     0,
