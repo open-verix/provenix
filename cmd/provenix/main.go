@@ -6,11 +6,13 @@ import (
 	"github.com/open-verix/provenix/internal/cli"
 )
 
-// Version information (set via ldflags during build)
+// Version information (set via ldflags during build).
+// Defaults are empty so SetVersion does not overwrite values
+// already injected into internal/cli.* by goreleaser ldflags.
 var (
-	version   = "dev"
-	commit    = "unknown"
-	buildTime = "unknown"
+	version   = ""
+	commit    = ""
+	buildTime = ""
 )
 
 func main() {

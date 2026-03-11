@@ -7,15 +7,24 @@ import (
 )
 
 var (
-	// Version is set at build time via ldflags
-	Version = "0.1.0-alpha.1"
+	// Version is set at build time via ldflags (-X github.com/open-verix/provenix/internal/cli.Version=...)
+	// Default "dev" is used for local builds without ldflags.
+	Version = "dev"
 	// GitCommit is set at build time via ldflags
 	GitCommit = "unknown"
 	// BuildDate is set at build time via ldflags
 	BuildDate = "unknown"
 )
 
-// SetVersion sets the version information from main package
+// versionTemplate builds the version output string.
+func versionTemplate() string {
+	return fmt.Sprintf("provenix version %s\n  commit: %s\n  built:  %s\n  go:     %s\n",
+		Version, GitCommit, BuildDate, runtime.Version())
+}
+
+// SetVersion sets the version information from main package.
+// Only non-empty values overwrite, so goreleaser ldflags injected
+// directly into cli.* are never clobbered by main's defaults.
 func SetVersion(version, commit, buildTime string) {
 	if version != "" {
 		Version = version
@@ -26,6 +35,9 @@ func SetVersion(version, commit, buildTime string) {
 	if buildTime != "" {
 		BuildDate = buildTime
 	}
+	// Keep cobra's --version flag in sync
+	rootCmd.Version = Version
+	rootCmd.SetVersionTemplate(versionTemplate())
 }
 
 var rootCmd = &cobra.Command{
@@ -66,10 +78,12 @@ func Execute() error {
 }
 
 func init() {
-	// Set custom version template for --version flag
-	rootCmd.SetVersionTemplate(fmt.Sprintf("provenix version %s\n  commit: %s\n  built:  %s\n  go:     %s\n",
-		Version, GitCommit, BuildDate, runtime.Version()))
-	
+	// Set --version template using the same function as the version subcommand.
+	// rootCmd.Version is also re-set in SetVersion() for cases where main
+	// injects additional info (e.g., local builds via Makefile).
+	rootCmd.Version = Version
+	rootCmd.SetVersionTemplate(versionTemplate())
+
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(attestCmd)
