@@ -51,8 +51,6 @@ func runSBOM(cmd *cobra.Command, args []string) error {
 	formatStr, _ := cmd.Flags().GetString("format")
 	output, _ := cmd.Flags().GetString("output")
 
-	fmt.Printf("📦 Generating SBOM for: %s\n", artifact)
-
 	// Get SBOM provider (prefer real provider, fallback to mock)
 	sbomProvider, err := providers.GetSBOMProvider("syft")
 	if err != nil {
@@ -70,11 +68,14 @@ func runSBOM(cmd *cobra.Command, args []string) error {
 	}
 
 	start := time.Now()
+	s := newSpinner(fmt.Sprintf("Generating SBOM for %s...", artifact))
+	s.Start()
 	sbom, err := sbomProvider.Generate(ctx, artifact, opts)
 	if err != nil {
-		fmt.Printf("❌ SBOM generation failed: %v\n", err)
+		s.Fail(fmt.Sprintf("❌ SBOM generation failed: %v", err))
 		os.Exit(ExitFatal)
 	}
+	s.Success(fmt.Sprintf("✅ SBOM generated  format: %s", formatStr))
 	duration := time.Since(start)
 
 	// Output result

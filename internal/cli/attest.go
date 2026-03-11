@@ -143,10 +143,6 @@ func runAttest(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 	
-	// TODO: Replace with actual provider implementations in Week 5-7
-	// For now, use mock providers to demonstrate the pipeline
-	fmt.Println("⚠️  Using real Syft/Grype providers (Cosign stub)")
-	
 	// Get SBOM provider (Syft is registered in internal/providers/sbom/register.go)
 	sbomProvider, err := providers.GetSBOMProvider("syft")
 	if err != nil {
@@ -190,26 +186,22 @@ func runAttest(cmd *cobra.Command, args []string) error {
 		GeneratorVersion: Version,
 	}
 	
-	// Generate evidence
-	fmt.Println("📦 Generating SBOM...")
+	// Generate evidence (SBOM + Scan + Sign are atomic — no temporary files)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	
+
+	s := newSpinner("Generating SBOM...")
+	s.Start()
+
 	ev, err := gen.Generate(ctx, artifact, opts)
 	if err != nil {
-		fmt.Printf("❌ Evidence generation failed: %v\n", err)
+		s.Fail(fmt.Sprintf("❌ Evidence generation failed: %v", err))
 		return err
 	}
-	
-	fmt.Printf("✅ SBOM generated (%s, %d packages)\n", 
-		ev.SBOM.Format, 
-		extractPackageCount(ev.SBOM))
-	
-	fmt.Printf("🔍 Vulnerability scan complete (%d vulnerabilities found)\n",
-		len(ev.VulnerabilityReport.Vulnerabilities))
-	
-	fmt.Printf("🔏 Signature created (provider: %s)\n", 
-		ev.Signature.SignerProvider)
+
+	s.Success(fmt.Sprintf("✅ SBOM       %s, %d packages", ev.SBOM.Format, extractPackageCount(ev.SBOM)))
+	fmt.Fprintf(os.Stderr, "✅ Vuln scan  %d vulnerabilities found\n", len(ev.VulnerabilityReport.Vulnerabilities))
+	fmt.Fprintf(os.Stderr, "✅ Signature  provider: %s\n", ev.Signature.SignerProvider)
 	
 	// Determine save path and save attestation
 	savePath, err := saveEvidenceWithFallback(ev, outputPath)

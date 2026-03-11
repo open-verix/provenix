@@ -70,12 +70,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Step 2: Initialize vulnerability database
-	fmt.Fprintln(os.Stderr, "🔄 Initializing Provenix...")
-	fmt.Fprintln(os.Stderr, "📥 Downloading Grype vulnerability database (this may take a few minutes)...")
+	s := newSpinner("Downloading Grype vulnerability database (~200MB, first run only)...")
+	s.Start()
 
 	// Get Grype provider
 	scannerProvider, err := providers.GetScannerProvider("grype")
 	if err != nil {
+		s.Fail(fmt.Sprintf("❌ Scanner provider not available: %v", err))
 		return fmt.Errorf("scanner provider not available: %w", err)
 	}
 
@@ -91,13 +92,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 		OfflineDB: false, // Force database download
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "\n❌ Error: %v\n", err)
+		s.Fail(fmt.Sprintf("❌ Failed to initialize vulnerability database: %v", err))
 		return fmt.Errorf("failed to initialize vulnerability database: %w", err)
 	}
 
 	_ = dummyReport // Ignore the report
 
-	fmt.Fprintln(os.Stderr, "✅ Initialization complete!")
+	s.Success("✅ Vulnerability database ready")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "You can now use:")
 	if initGenerateKey {

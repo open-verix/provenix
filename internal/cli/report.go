@@ -122,24 +122,28 @@ func runReportDependencies(cmd *cobra.Command, args []string) error {
 		}
 
 		// Generate SBOM
-		fmt.Fprintf(os.Stderr, "📦 Generating SBOM...\n")
+		s := newSpinner("Generating SBOM...")
+		s.Start()
 		sbomResult, err := sbomProvider.Generate(ctx, input, sbom.Options{
 			Format: sbom.FormatCycloneDXJSON,
 		})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "\n❌ Error: %v\n", err)
+			s.Fail(fmt.Sprintf("❌ SBOM generation failed: %v", err))
 			return fmt.Errorf("failed to generate SBOM: %w", err)
 		}
+		s.Success(fmt.Sprintf("✅ SBOM generated (%d packages)", extractPackageCount(sbomResult)))
 
 		// Scan for vulnerabilities
-		fmt.Fprintf(os.Stderr, "🔍 Scanning for vulnerabilities...\n")
+		s2 := newSpinner("Scanning for vulnerabilities...")
+		s2.Start()
 		vulnReport, err := scannerProvider.Scan(ctx, scanner.ScanInput{
 			SBOM: sbomResult,
 		}, scanner.Options{})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "\n❌ Error: %v\n", err)
+			s2.Fail(fmt.Sprintf("❌ Vulnerability scan failed: %v", err))
 			return fmt.Errorf("failed to scan vulnerabilities: %w", err)
 		}
+		s2.Success(fmt.Sprintf("✅ Scan complete (%d vulnerabilities found)", len(vulnReport.Vulnerabilities)))
 
 		// Create evidence structure (without signature)
 		ev = &evidence.Evidence{

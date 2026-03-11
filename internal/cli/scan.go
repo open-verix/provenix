@@ -47,11 +47,10 @@ func runScan(cmd *cobra.Command, args []string) error {
 	output, _ := cmd.Flags().GetString("output")
 	sbomPath, _ := cmd.Flags().GetString("sbom")
 
-	fmt.Printf("🔎 Scanning for vulnerabilities: %s\n", target)
-
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
+	start := time.Now()
 	var sbomObj *sbomprovider.SBOM
 	var err error
 
@@ -59,14 +58,12 @@ func runScan(cmd *cobra.Command, args []string) error {
 	if sbomPath != "" {
 		data, err := os.ReadFile(sbomPath)
 		if err != nil {
-			fmt.Printf("❌ Failed to read SBOM file: %v\n", err)
+			fmt.Fprintf(os.Stderr, "❌ Failed to read SBOM file: %v\n", err)
 			os.Exit(ExitFatal)
 		}
-
-		// Parse SBOM file
 		sbomObj = &sbomprovider.SBOM{}
 		if err := json.Unmarshal(data, sbomObj); err != nil {
-			fmt.Printf("❌ Invalid SBOM file: %v\n", err)
+			fmt.Fprintf(os.Stderr, "❌ Invalid SBOM file: %v\n", err)
 			os.Exit(ExitFatal)
 		}
 	} else {
@@ -75,12 +72,14 @@ func runScan(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			sbomProvider, _ = providers.GetSBOMProvider("mock")
 		}
-
+		s1 := newSpinner(fmt.Sprintf("Generating SBOM for %s...", target))
+		s1.Start()
 		sbomObj, err = sbomProvider.Generate(ctx, target, sbomprovider.Options{Format: sbomprovider.FormatCycloneDXJSON})
 		if err != nil {
-			fmt.Printf("❌ SBOM generation failed: %v\n", err)
+			s1.Fail(fmt.Sprintf("❌ SBOM generation failed: %v", err))
 			os.Exit(ExitFatal)
 		}
+		s1.Success("✅ SBOM generated")
 	}
 
 	// Scan SBOM for vulnerabilities
@@ -89,12 +88,14 @@ func runScan(cmd *cobra.Command, args []string) error {
 		scanProvider, _ = providers.GetScannerProvider("mock")
 	}
 
-	start := time.Now()
+	s2 := newSpinner("Scanning for vulnerabilities...")
+	s2.Start()
 	report, err := scanProvider.Scan(ctx, scannerprovider.ScanInput{Artifact: target, SBOM: sbomObj}, scannerprovider.DefaultOptions())
 	if err != nil {
-		fmt.Printf("❌ Scan failed: %v\n", err)
+		s2.Fail(fmt.Sprintf("❌ Scan failed: %v", err))
 		os.Exit(ExitFatal)
 	}
+	s2.Success(fmt.Sprintf("✅ Scan complete  %d vulnerabilities found", len(report.Vulnerabilities)))
 	duration := time.Since(start)
 
 	// Format output
@@ -110,12 +111,11 @@ func runScan(cmd *cobra.Command, args []string) error {
 		fmt.Printf("✅ Scan report saved to: %s\n", output)
 	}
 
-	// Summary
-	fmt.Printf("🔍 Vulnerability scan complete\n")
-	fmt.Printf("📊 Summary:\n")
-	fmt.Printf("  Artifact:         %s\n", target)
-	fmt.Printf("  Vulnerabilities:  %d\n", len(report.Vulnerabilities))
-	fmt.Printf("  Duration:         %v\n", duration)
+	// Summary to stderr (JSON report goes to stdout)
+	fmt.Fprintf(os.Stderr, "\n📊 Summary:\n")
+	fmt.Fprintf(os.Stderr, "  Artifact:         %s\n", target)
+	fmt.Fprintf(os.Stderr, "  Vulnerabilities:  %d\n", len(report.Vulnerabilities))
+	fmt.Fprintf(os.Stderr, "  Duration:         %v\n", duration)
 
 	return nil
 }
