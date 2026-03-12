@@ -191,18 +191,54 @@ func LoadConfig(path string) (*Config, error) {
 }
 
 // loadConfigFromFile loads configuration from a specific file.
+//
+// Two formats are supported:
+//
+//  1. Standalone policy file (legacy / team-shared):
+//     version: v1
+//     vulnerabilities:
+//     max_critical: 0
+//
+//  2. Unified provenix.yaml (recommended — tool config + policy in one file):
+//     version: v1
+//     sbom:
+//     format: cyclonedx-json
+//     policy:            ← policy lives under this key
+//     vulnerabilities:
+//     max_critical: 0
 func loadConfigFromFile(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file %s: %w", path, err)
 	}
 
+	// Detect unified provenix.yaml: parse as a raw node map and check for
+	// a top-level "policy:" key.
+	var raw map[string]yaml.Node
+	if err := yaml.Unmarshal(data, &raw); err == nil {
+		if policyNode, ok := raw["policy"]; ok {
+			// Unified format — extract the policy: sub-section.
+			var cfg Config
+			if err := policyNode.Decode(&cfg); err != nil {
+				return nil, fmt.Errorf("failed to parse policy section in %s: %w", path, err)
+			}
+			// Inherit version from parent file when not set in sub-section.
+			if cfg.Version == "" {
+				cfg.Version = "v1"
+			}
+			if err := validateConfig(&cfg); err != nil {
+				return nil, fmt.Errorf("invalid policy config in %s: %w", path, err)
+			}
+			return &cfg, nil
+		}
+	}
+
+	// Standalone policy file — parse the whole document.
 	var config Config
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
 
-	// Validate config
 	if err := validateConfig(&config); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}

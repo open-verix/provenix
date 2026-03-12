@@ -1,0 +1,55 @@
+# provenix.yaml — Provenix configuration (tool config + policy in one file)
+#
+# Commit this file to your repository.
+# Generated artifacts go to .provenix/ which should be in .gitignore.
+#
+# Config priority: CLI flags > env vars (PROVENIX_*) > this file > defaults
+version: v1
+
+# ==============================================================================
+# Tool Configuration
+# ==============================================================================
+sbom:
+  # Options: cyclonedx-json, spdx-json, syft-json
+  format: cyclonedx-json
+  include-files: false
+
+scan:
+  min-severity: medium
+  fail-on: critical
+
+signing:
+  mode: keyless
+  oidc:
+    fulcio-url: https://fulcio.sigstore.dev
+
+rekor:
+  url: https://rekor.sigstore.dev
+
+storage:
+  dir: .provenix/attestations
+
+# ==============================================================================
+# Policy
+# ==============================================================================
+policy:
+  vulnerabilities:
+    max_critical: 0
+    max_high: 0
+    max_medium: 10
+
+  # TODO(Phase 6): License policy
+  # licenses:
+  #   allowed: [MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC]
+  #   denied: [GPL-3.0, AGPL-3.0]
+  #   warn_on_unknown: true
+
+  sbom:
+    require_checksum: true
+
+  signing:
+    required: false
+
+  custom:
+    cel_enabled: false
+    entry_point: data.provenix.allow

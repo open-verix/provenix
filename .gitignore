@@ -29,9 +29,10 @@ go.work.sum
 *~
 .DS_Store
 
-# Local attestations
+# Provenix generated artifacts (never commit these)
 .provenix/
 attestation.json
+vex.json
 
 # Temporary files
 tmp/
@@ -45,14 +46,13 @@ temp/
 explains/
 manuals/
 
-# Test artifacts (should not be committed)
+# Test binaries and release artifacts (never commit these)
 provenix-stripped
 provenix-*
 *.tar.gz
 *.zip
 my-policy.yaml
-provenix.yaml
-vex.json
+policy.yaml
 
 # Draft documentation
 docs/drafts/
