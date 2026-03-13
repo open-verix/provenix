@@ -54,18 +54,25 @@ Exit Codes:
 var policyInitCmd = &cobra.Command{
 	Use:   "init [path]",
 	Short: "Initialize default policy configuration",
-	Long: `Create a default policy configuration file.
+	Long: `Create a default provenix.yaml with tool config and policy in one file.
 
-This command generates a provenix.yaml file with sensible defaults:
-- Max 0 critical/high vulnerabilities, max 10 medium
-- SBOM checksum requirement
+When no path is given (or path is provenix.yaml), generates a full unified
+configuration that includes both tool settings (sbom, scan, signing) and the
+policy: section in one file. This is the recommended format.
 
-You can customize the generated file for your project's needs.`,
-	Example: `  # Create provenix.yaml in current directory
+When a custom path is given, generates a standalone policy-only file.
+
+Generated defaults:
+  - Max 0 critical/high vulnerabilities, max 10 medium
+  - SBOM checksum requirement`,
+	Example: `  # Create provenix.yaml (unified tool config + policy)
   provenix policy init
 
-  # Create custom-policy.yaml
-  provenix policy init custom-policy.yaml`,
+  # Overwrite existing file
+  provenix policy init --force
+
+  # Create a standalone policy file at a custom path
+  provenix policy init my-policy.yaml`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runPolicyInit,
 }
@@ -168,18 +175,29 @@ func runPolicyInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("file %s already exists (use --force to overwrite)", outputPath)
 	}
 
-	// Create default config
+	// Create default policy config
 	cfg := policy.DefaultConfig()
 
-	// Save to file
-	if err := policy.SaveConfig(cfg, outputPath); err != nil {
-		return fmt.Errorf("failed to save configuration: %w", err)
+	// Use unified format for provenix.yaml (tool config + policy: section).
+	// Use standalone format for any other filename.
+	isUnified := outputPath == "provenix.yaml" || outputPath == ".provenix.yaml"
+	if isUnified {
+		if err := policy.SaveUnifiedConfig(cfg, outputPath); err != nil {
+			return fmt.Errorf("failed to save configuration: %w", err)
+		}
+		cmd.Printf("Created %s (unified tool config + policy)\n", outputPath)
+		cmd.Println("\nReview and customize:")
+		cmd.Println("  - Tool config: sbom, scan, signing, rekor, storage sections")
+		cmd.Println("  - Policy rules: policy.vulnerabilities, policy.sbom")
+	} else {
+		if err := policy.SaveConfig(cfg, outputPath); err != nil {
+			return fmt.Errorf("failed to save configuration: %w", err)
+		}
+		cmd.Printf("Created standalone policy configuration: %s\n", outputPath)
+		cmd.Println("\nReview and customize the configuration for your project:")
+		cmd.Printf("  - Adjust vulnerability thresholds under 'vulnerabilities'\n")
+		cmd.Printf("  - Set SBOM requirements under 'sbom'\n")
 	}
-
-	cmd.Printf("Created policy configuration: %s\n", outputPath)
-	cmd.Println("\nReview and customize the configuration for your project:")
-	cmd.Printf("  - Adjust vulnerability thresholds under 'vulnerabilities'\n")
-	cmd.Printf("  - Set SBOM requirements under 'sbom'\n")
 	cmd.Printf("\nRun 'provenix policy validate %s' to verify your changes.\n", outputPath)
 
 	return nil

@@ -293,7 +293,8 @@ func validateConfig(config *Config) error {
 	return nil
 }
 
-// SaveConfig saves the configuration to a file.
+// SaveConfig saves the policy configuration to a file in standalone format.
+// For writing to provenix.yaml (unified format), use SaveUnifiedConfig instead.
 func SaveConfig(config *Config, path string) error {
 	data, err := yaml.Marshal(config)
 	if err != nil {
@@ -309,6 +310,101 @@ func SaveConfig(config *Config, path string) error {
 	}
 
 	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to write config file %s: %w", path, err)
+	}
+
+	return nil
+}
+
+// SaveUnifiedConfig writes a full provenix.yaml containing both tool config
+// defaults and the policy: sub-section. This is the recommended format for
+// new projects — a single file manages all Provenix settings.
+func SaveUnifiedConfig(policy *Config, path string) error {
+	maxCritical := 0
+	maxHigh := 0
+	maxMedium := 10
+	if policy.Vulnerabilities != nil {
+		if policy.Vulnerabilities.MaxCritical != nil {
+			maxCritical = *policy.Vulnerabilities.MaxCritical
+		}
+		if policy.Vulnerabilities.MaxHigh != nil {
+			maxHigh = *policy.Vulnerabilities.MaxHigh
+		}
+		if policy.Vulnerabilities.MaxMedium != nil {
+			maxMedium = *policy.Vulnerabilities.MaxMedium
+		}
+	}
+
+	requireChecksum := true
+	if policy.SBOM != nil {
+		requireChecksum = policy.SBOM.RequireChecksum
+	}
+
+	content := fmt.Sprintf(`# provenix.yaml — Provenix configuration (tool config + policy in one file)
+#
+# Commit this file to your repository.
+# Generated artifacts go to .provenix/ which should be in .gitignore.
+#
+# Config priority: CLI flags > env vars (PROVENIX_*) > this file > defaults
+version: v1
+
+# ==============================================================================
+# Tool Configuration
+# ==============================================================================
+sbom:
+  # Options: cyclonedx-json, spdx-json, syft-json
+  format: cyclonedx-json
+  include-files: false
+
+scan:
+  min-severity: medium
+  fail-on: critical
+
+signing:
+  mode: keyless
+  oidc:
+    fulcio-url: https://fulcio.sigstore.dev
+
+rekor:
+  url: https://rekor.sigstore.dev
+
+storage:
+  dir: .provenix/attestations
+
+# ==============================================================================
+# Policy
+# ==============================================================================
+policy:
+  vulnerabilities:
+    max_critical: %d
+    max_high: %d
+    max_medium: %d
+
+  # TODO(Phase 6): License policy
+  # licenses:
+  #   allowed: [MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC]
+  #   denied: [GPL-3.0, AGPL-3.0]
+  #   warn_on_unknown: true
+
+  sbom:
+    require_checksum: %v
+
+  signing:
+    required: false
+
+  custom:
+    cel_enabled: false
+`, maxCritical, maxHigh, maxMedium, requireChecksum)
+
+	// Create directory if needed
+	dir := filepath.Dir(path)
+	if dir != "." && dir != "" {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %w", dir, err)
+		}
+	}
+
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to write config file %s: %w", path, err)
 	}
 
