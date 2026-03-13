@@ -60,7 +60,7 @@ on:
 
 jobs:
   attest:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       id-token: write # OIDC token for keyless signing
       contents: read # Read repository contents

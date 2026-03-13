@@ -63,10 +63,10 @@ jobs:
           # Linux
           - goos: linux
             goarch: amd64
-            runs-on: ubuntu-latest
+            runs-on: ubuntu-24.04
           - goos: linux
             goarch: arm64
-            runs-on: ubuntu-latest
+            runs-on: ubuntu-24.04
           # Windows
           - goos: windows
             goarch: amd64
@@ -118,10 +118,10 @@ jobs:
 
       - name: Test binary (native builds only)
         # Only run on native builds (not cross-compiled)
-        # Linux arm64 is cross-compiled on ubuntu-latest (amd64), so skip it
+        # Linux arm64 is cross-compiled on ubuntu-24.04 (amd64), so skip it
         if: |
           (matrix.goos == 'darwin' && matrix.goarch == 'arm64' && matrix.runs-on == 'macos-latest') ||
-          (matrix.goos == 'linux' && matrix.goarch == 'amd64' && matrix.runs-on == 'ubuntu-latest') ||
+          (matrix.goos == 'linux' && matrix.goarch == 'amd64' && matrix.runs-on == 'ubuntu-24.04') ||
           (matrix.goos == 'windows' && matrix.goarch == 'amd64' && matrix.runs-on == 'windows-latest')
         shell: bash
         run: |
@@ -254,7 +254,7 @@ jobs:
 
   package-release:
     name: Package Release Archives
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [build-multiplatform, attest-self]
     if: startsWith(github.ref, 'refs/tags/')
 
@@ -323,7 +323,7 @@ jobs:
 
   create-release:
     name: Create GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: package-release
     if: startsWith(github.ref, 'refs/tags/')
     permissions:

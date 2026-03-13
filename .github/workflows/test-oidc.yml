@@ -15,7 +15,7 @@ permissions:
 jobs:
   test-keyless-signing:
     name: Keyless Signing End-to-End Test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
