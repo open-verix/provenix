@@ -48,15 +48,15 @@ func TestHistoryCommand(t *testing.T) {
 	}{
 		{
 			name:           "List all local attestations",
-			args:           []string{"history", "--local-only", "--unpublished"},
+			args:           []string{"history", "--local-only"},
 			expectError:    false,
 			expectContains: []string{"nginx:latest", "alpine:latest", "Found 2 attestation(s)"},
 		},
 		{
-			name:           "List only published",
+			name:           "All local attestations shown by default (published and unpublished)",
 			args:           []string{"history", "--local-only"},
 			expectError:    false,
-			expectContains: []string{"alpine:latest", "Found 1 attestation(s)"},
+			expectContains: []string{"nginx:latest", "alpine:latest", "Found 2 attestation(s)"},
 		},
 		{
 			name:           "Filter by artifact name",
@@ -66,13 +66,13 @@ func TestHistoryCommand(t *testing.T) {
 		},
 		{
 			name:           "JSON output",
-			args:           []string{"history", "--local-only", "--format", "json", "--unpublished"},
+			args:           []string{"history", "--local-only", "--format", "json"},
 			expectError:    false,
 			expectContains: []string{`"artifact"`, `"digest_sha256"`, `"timestamp"`},
 		},
 		{
 			name:           "Markdown output",
-			args:           []string{"history", "--local-only", "--format", "markdown", "--unpublished"},
+			args:           []string{"history", "--local-only", "--format", "markdown"},
 			expectError:    false,
 			expectContains: []string{"# Attestation History", "| Artifact |"},
 		},

@@ -19,7 +19,6 @@ var (
 	historySince       string
 	historyUntil       string
 	historyLocalOnly   bool
-	historyUnpublished bool
 	historyFormat      string
 	historyLimit       int
 )
@@ -63,7 +62,6 @@ func init() {
 	historyCmd.Flags().StringVar(&historySince, "since", "", "Start time (RFC3339 or relative: '2 weeks ago', 'yesterday')")
 	historyCmd.Flags().StringVar(&historyUntil, "until", "", "End time (RFC3339 or relative: '1 week ago', 'today')")
 	historyCmd.Flags().BoolVar(&historyLocalOnly, "local-only", false, "Query only local attestations (skip Rekor)")
-	historyCmd.Flags().BoolVar(&historyUnpublished, "unpublished", false, "Include unpublished attestations (exit code 2)")
 	historyCmd.Flags().StringVar(&historyFormat, "format", "table", "Output format: table, json, markdown")
 	historyCmd.Flags().IntVar(&historyLimit, "limit", 100, "Maximum number of results to return")
 }
@@ -123,7 +121,7 @@ func runHistory(cmd *cobra.Command, args []string) error {
 	}
 
 	// Query local attestations
-	localRecords, err := queryLocalAttestations(artifact, sinceTime, untilTime, historyUnpublished)
+	localRecords, err := queryLocalAttestations(artifact, sinceTime, untilTime)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Failed to query local attestations: %v\n", err)
 	} else {
@@ -174,7 +172,7 @@ func queryRekor(ctx context.Context, artifact string, since, until *time.Time) (
 }
 
 // queryLocalAttestations queries local .provenix/attestations/ directory.
-func queryLocalAttestations(artifact string, since, until *time.Time, includeUnpublished bool) ([]AttestationRecord, error) {
+func queryLocalAttestations(artifact string, since, until *time.Time) ([]AttestationRecord, error) {
 	attestationsDir := ".provenix/attestations"
 	
 	// Check if directory exists
@@ -296,9 +294,8 @@ func queryLocalAttestations(artifact string, since, until *time.Time, includeUnp
 			return nil // Skip non-matching artifacts
 		}
 
-		if !includeUnpublished && !record.Published {
-			return nil // Skip unpublished if not requested
-		}
+		// Note: local attestations are always included regardless of publication status.
+		// The --unpublished flag controls whether to *highlight* unpublished records, not hide them.
 
 		if since != nil && record.Timestamp.Before(*since) {
 			return nil // Skip before start time

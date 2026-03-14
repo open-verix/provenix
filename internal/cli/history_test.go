@@ -95,7 +95,7 @@ func TestQueryLocalAttestations(t *testing.T) {
 	os.Chdir(tmpDir)
 
 	// Test query
-	records, err := queryLocalAttestations("nginx", nil, nil, false)
+	records, err := queryLocalAttestations("nginx", nil, nil)
 	if err != nil {
 		t.Fatalf("queryLocalAttestations() error = %v", err)
 	}
@@ -175,7 +175,7 @@ func TestQueryLocalAttestations_TimeFilter(t *testing.T) {
 
 	// Test 1: Query with "since 1 day ago" (should return 0 results)
 	oneDayAgo := time.Now().Add(-24 * time.Hour)
-	records, err := queryLocalAttestations("", &oneDayAgo, nil, true) // Include unpublished
+	records, err := queryLocalAttestations("", &oneDayAgo, nil)
 	if err != nil {
 		t.Fatalf("queryLocalAttestations() error = %v", err)
 	}
@@ -186,7 +186,7 @@ func TestQueryLocalAttestations_TimeFilter(t *testing.T) {
 
 	// Test 2: Query with "since 3 days ago" (should return 1 result)
 	threeDaysAgo := time.Now().Add(-72 * time.Hour)
-	records, err = queryLocalAttestations("", &threeDaysAgo, nil, true) // Include unpublished
+	records, err = queryLocalAttestations("", &threeDaysAgo, nil)
 	if err != nil {
 		t.Fatalf("queryLocalAttestations() error = %v", err)
 	}
