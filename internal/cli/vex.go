@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -32,14 +33,14 @@ in your software, including:
 - Under investigation (status unknown)
 
 This helps downstream consumers understand which vulnerabilities are actual risks.`,
-	Example: `  # Generate VEX from attestation
-  provenix vex generate attestation.json
+	Example: `  # Generate VEX from latest attestation (auto-detected)
+  provenix vex generate
 
-  # Generate VEX from artifact
-  provenix vex generate alpine:latest
+  # Generate VEX from specific attestation
+  provenix vex generate .provenix/attestations/sha256-4ed99f17c763.json
 
   # Output in CycloneDX format
-  provenix vex generate attestation.json --format cyclonedx`,
+  provenix vex generate --format cyclonedx`,
 }
 
 var vexGenerateCmd = &cobra.Command{
@@ -54,15 +55,18 @@ Supported formats:
 - openvex (default): OpenVEX format
 - cyclonedx: CycloneDX VEX format
 - csaf: CSAF VEX format`,
-	Example: `  # From existing attestation
-  provenix vex generate attestation.json
+	Example: `  # No args: auto-detect latest attestation from .provenix/attestations/
+  provenix vex generate
+
+  # From specific attestation file
+  provenix vex generate .provenix/attestations/sha256-4ed99f17c763.json
 
   # From Docker image
   provenix vex generate nginx:latest
 
   # Specify output format
   provenix vex generate alpine:latest --format cyclonedx -o vex.json`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: runVEXGenerate,
 }
 
@@ -73,18 +77,70 @@ func init() {
 	vexGenerateCmd.Flags().StringVar(&vexFormat, "format", "openvex", "VEX format: openvex, cyclonedx, csaf")
 }
 
+// findLatestAttestation finds the most recent attestation file.
+// Priority: newest file in .provenix/attestations/ → ./attestation.json
+func findLatestAttestation() (string, error) {
+	const storageDir = ".provenix/attestations"
+	if info, err := os.Stat(storageDir); err == nil && info.IsDir() {
+		entries, err := os.ReadDir(storageDir)
+		if err == nil {
+			var latest os.FileInfo
+			var latestPath string
+			for _, e := range entries {
+				if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+					continue
+				}
+				fi, err := e.Info()
+				if err != nil {
+					continue
+				}
+				if latest == nil || fi.ModTime().After(latest.ModTime()) {
+					latest = fi
+					latestPath = storageDir + "/" + e.Name()
+				}
+			}
+			if latestPath != "" {
+				fmt.Fprintf(os.Stderr, "📂 Using latest attestation: %s\n", latestPath)
+				return latestPath, nil
+			}
+		}
+	}
+
+	// Fallback: explicit --output file
+	if _, err := os.Stat("attestation.json"); err == nil {
+		return "attestation.json", nil
+	}
+
+	return "", fmt.Errorf("no attestation found\n" +
+		"  Run 'provenix attest <artifact>' first, or specify a file:\n" +
+		"  provenix vex generate .provenix/attestations/<file>.json")
+}
+
 func runVEXGenerate(cmd *cobra.Command, args []string) error {
-	input := args[0]
+	var input string
+	if len(args) > 0 {
+		input = args[0]
+	} else {
+		// Auto-detect: prefer latest file in .provenix/attestations/ (default attest output),
+		// fall back to attestation.json (explicit --output usage).
+		var err error
+		input, err = findLatestAttestation()
+		if err != nil {
+			return err
+		}
+	}
 	_, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	// Check if input is an existing attestation file
+	// Check if input is an attestation file (ends in .json or is an existing file)
+	isJSONFile := len(input) > 5 && input[len(input)-5:] == ".json"
+	_, statErr := os.Stat(input)
 	var ev *evidence.Evidence
-	if _, err := os.Stat(input); err == nil && (input == "attestation.json" || len(input) > 5 && input[len(input)-5:] == ".json") {
-		// Load existing attestation
+	if isJSONFile || statErr == nil {
+		// Treat as attestation file
 		data, err := os.ReadFile(input)
 		if err != nil {
-			return fmt.Errorf("failed to read attestation file: %w", err)
+			return fmt.Errorf("failed to read attestation file %s: %w", input, err)
 		}
 
 		// Try to parse as attestation bundle first (new format with statementBase64)
