@@ -19,7 +19,6 @@ var policyCmd = &cobra.Command{
 
 Policy commands allow you to:
 - Check evidence against policy rules
-- Initialize default policy configuration
 - Validate policy configuration files`,
 }
 
@@ -51,32 +50,6 @@ Exit Codes:
 	RunE: runPolicyCheck,
 }
 
-var policyInitCmd = &cobra.Command{
-	Use:   "init [path]",
-	Short: "Initialize default policy configuration",
-	Long: `Create a default provenix.yaml with tool config and policy in one file.
-
-When no path is given (or path is provenix.yaml), generates a full unified
-configuration that includes both tool settings (sbom, scan, signing) and the
-policy: section in one file. This is the recommended format.
-
-When a custom path is given, generates a standalone policy-only file.
-
-Generated defaults:
-  - Max 0 critical/high vulnerabilities, max 10 medium
-  - SBOM checksum requirement`,
-	Example: `  # Create provenix.yaml (unified tool config + policy)
-  provenix policy init
-
-  # Overwrite existing file
-  provenix policy init --force
-
-  # Create a standalone policy file at a custom path
-  provenix policy init my-policy.yaml`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: runPolicyInit,
-}
-
 var policyValidateCmd = &cobra.Command{
 	Use:   "validate [config-file]",
 	Short: "Validate policy configuration file",
@@ -100,21 +73,16 @@ var (
 	policyConfigPath string
 	policyOutputPath string
 	policyOutputJSON bool
-	policyForceOverwrite bool
 )
 
 func init() {
 	policyCmd.AddCommand(policyCheckCmd)
-	policyCmd.AddCommand(policyInitCmd)
 	policyCmd.AddCommand(policyValidateCmd)
 
 	// Policy check flags
 	policyCheckCmd.Flags().StringVarP(&policyConfigPath, "config", "c", "", "Path to policy configuration file")
 	policyCheckCmd.Flags().StringVarP(&policyOutputPath, "output", "o", "", "Output file for results (JSON format)")
 	policyCheckCmd.Flags().BoolVar(&policyOutputJSON, "json", false, "Output results in JSON format")
-
-	// Policy init flags
-	policyInitCmd.Flags().BoolVarP(&policyForceOverwrite, "force", "f", false, "Overwrite existing file")
 }
 
 func runPolicyCheck(cmd *cobra.Command, args []string) error {
@@ -159,46 +127,6 @@ func runPolicyCheck(cmd *cobra.Command, args []string) error {
 			Err:  fmt.Errorf("policy check failed"),
 		}
 	}
-
-	return nil
-}
-
-func runPolicyInit(cmd *cobra.Command, args []string) error {
-	// Determine output path
-	outputPath := "provenix.yaml"
-	if len(args) > 0 {
-		outputPath = args[0]
-	}
-
-	// Check if file already exists
-	if _, err := os.Stat(outputPath); err == nil && !policyForceOverwrite {
-		return fmt.Errorf("file %s already exists (use --force to overwrite)", outputPath)
-	}
-
-	// Create default policy config
-	cfg := policy.DefaultConfig()
-
-	// Use unified format for provenix.yaml (tool config + policy: section).
-	// Use standalone format for any other filename.
-	isUnified := outputPath == "provenix.yaml" || outputPath == ".provenix.yaml"
-	if isUnified {
-		if err := policy.SaveUnifiedConfig(cfg, outputPath); err != nil {
-			return fmt.Errorf("failed to save configuration: %w", err)
-		}
-		cmd.Printf("Created %s (unified tool config + policy)\n", outputPath)
-		cmd.Println("\nReview and customize:")
-		cmd.Println("  - Tool config: sbom, scan, signing, rekor, storage sections")
-		cmd.Println("  - Policy rules: policy.vulnerabilities, policy.sbom")
-	} else {
-		if err := policy.SaveConfig(cfg, outputPath); err != nil {
-			return fmt.Errorf("failed to save configuration: %w", err)
-		}
-		cmd.Printf("Created standalone policy configuration: %s\n", outputPath)
-		cmd.Println("\nReview and customize the configuration for your project:")
-		cmd.Printf("  - Adjust vulnerability thresholds under 'vulnerabilities'\n")
-		cmd.Printf("  - Set SBOM requirements under 'sbom'\n")
-	}
-	cmd.Printf("\nRun 'provenix policy validate %s' to verify your changes.\n", outputPath)
 
 	return nil
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/open-verix/provenix/internal/policy"
 	"github.com/open-verix/provenix/internal/providers"
 	"github.com/open-verix/provenix/internal/providers/sbom"
 	"github.com/open-verix/provenix/internal/providers/scanner"
@@ -21,27 +22,31 @@ import (
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Initialize Provenix (download vulnerability database and optionally generate keys)",
-	Long: `Initialize Provenix by downloading the Grype vulnerability database.
+	Short: "Initialize Provenix (create provenix.yaml, download vulnerability database)",
+	Long: `Initialize Provenix for the current project.
 
-This command should be run once before using attestation or scanning features.
-The database will be stored in the default Grype cache location:
-  ~/.cache/grype/db/
+This command should be run once in each project directory before using
+attestation or scanning features. It performs the following steps:
 
-The database is updated regularly by Grype and contains vulnerability 
-information from multiple sources (NVD, OSV, GitHub, etc.).
+  1. Create provenix.yaml with default tool config and policy settings
+     (skipped if the file already exists — use --force to regenerate)
+  2. Create the .provenix/ working directory
+  3. Download the Grype vulnerability database (~200MB, first run only)
+     stored in ~/.cache/grype/db/
+  4. Optionally generate a development key pair (--generate-key)
 
-Optionally, you can generate a development key pair for local testing with --generate-key.`,
-	Example: `  # Initialize vulnerability database
+The generated provenix.yaml contains both tool configuration (sbom, scan,
+signing, rekor) and the policy: section in one unified file.`,
+	Example: `  # Standard first-time setup
   provenix init
 
-  # Generate development keys for local testing
+  # Regenerate provenix.yaml (overwrite existing)
+  provenix init --force
+
+  # Also generate development keys for local signing
   provenix init --generate-key
 
-  # Specify custom key output location
-  provenix init --generate-key --key-output ./dev-keys/cosign
-
-  # The database will be used by these commands:
+  # The following commands are then available:
   provenix attest alpine:latest
   provenix scan alpine:latest
   provenix report dependencies alpine:latest`,
@@ -51,25 +56,51 @@ Optionally, you can generate a development key pair for local testing with --gen
 var (
 	initGenerateKey bool
 	initKeyOutput   string
+	initForce       bool
 )
 
 func init() {
 	initCmd.Flags().BoolVar(&initGenerateKey, "generate-key", false, "Generate development key pair for local signing")
 	initCmd.Flags().StringVar(&initKeyOutput, "key-output", ".provenix/cosign", "Output path prefix for generated keys")
+	initCmd.Flags().BoolVar(&initForce, "force", false, "Overwrite provenix.yaml even if it already exists")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	// Step 1: Generate keys if requested
+	// Step 0: Create .provenix/ directory
+	if err := os.MkdirAll(".provenix", 0755); err != nil {
+		return fmt.Errorf("failed to create .provenix directory: %w", err)
+	}
+
+	// Step 1: Generate provenix.yaml (skip if exists unless --force)
+	const configFile = "provenix.yaml"
+	_, statErr := os.Stat(configFile)
+	switch {
+	case statErr != nil: // file does not exist
+		if err := policy.SaveUnifiedConfig(policy.DefaultConfig(), configFile); err != nil {
+			return fmt.Errorf("failed to create %s: %w", configFile, err)
+		}
+		fmt.Fprintf(os.Stderr, "✅ Created %s (tool config + policy)\n", configFile)
+	case initForce: // file exists but --force given
+		if err := policy.SaveUnifiedConfig(policy.DefaultConfig(), configFile); err != nil {
+			return fmt.Errorf("failed to overwrite %s: %w", configFile, err)
+		}
+		fmt.Fprintf(os.Stderr, "✅ Regenerated %s (overwritten)\n", configFile)
+	default: // file exists, no --force
+		fmt.Fprintf(os.Stderr, "ℹ️  %s already exists, skipping\n", configFile)
+		fmt.Fprintf(os.Stderr, "   To regenerate: provenix init --force\n")
+	}
+
+	// Step 2: Generate keys if requested
 	if initGenerateKey {
 		if err := generateDevKeys(initKeyOutput); err != nil {
 			return fmt.Errorf("failed to generate development keys: %w", err)
 		}
 	}
 
-	// Step 2: Initialize vulnerability database
+	// Step 3: Initialize vulnerability database
 	s := newSpinner("Downloading Grype vulnerability database (~200MB, first run only)...")
 	s.Start()
 
