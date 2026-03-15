@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 var (
 	vexOutputFile string
 	vexFormat     string
+	vexOutputSet  bool // true when --output was explicitly provided
 )
 
 var vexCmd = &cobra.Command{
@@ -55,17 +57,17 @@ Supported formats:
 - openvex (default): OpenVEX format
 - cyclonedx: CycloneDX VEX format
 - csaf: CSAF VEX format`,
-	Example: `  # No args: auto-detect latest attestation from .provenix/attestations/
+	Example: `  # No args: auto-detect latest attestation, save to .provenix/vex/sha256-{digest}.json
   provenix vex generate
 
   # From specific attestation file
   provenix vex generate .provenix/attestations/sha256-4ed99f17c763.json
 
-  # From Docker image
-  provenix vex generate nginx:latest
-
   # Specify output format
-  provenix vex generate alpine:latest --format cyclonedx -o vex.json`,
+  provenix vex generate --format cyclonedx
+
+  # Override output path (e.g. for sharing)
+  provenix vex generate -o vex.json`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runVEXGenerate,
 }
@@ -73,8 +75,25 @@ Supported formats:
 func init() {
 	vexCmd.AddCommand(vexGenerateCmd)
 
-	vexGenerateCmd.Flags().StringVarP(&vexOutputFile, "output", "o", "vex.json", "Output VEX file")
+	vexGenerateCmd.Flags().StringVarP(&vexOutputFile, "output", "o", "", "Output VEX file (default: .provenix/vex/sha256-{digest}.json)")
 	vexGenerateCmd.Flags().StringVar(&vexFormat, "format", "openvex", "VEX format: openvex, cyclonedx, csaf")
+}
+
+// resolveVexOutputPath returns .provenix/vex/sha256-{first12}.json derived from
+// the artifact digest, or a timestamp-based name if the digest is unavailable.
+func resolveVexOutputPath(ev *evidence.Evidence) string {
+	const vexDir = ".provenix/vex"
+	digest := ev.ArtifactDigest // e.g. "sha256:4ed99f17c763..."
+	if digest != "" {
+		// Strip "sha256:" prefix and take first 12 chars, matching attest naming
+		hex := strings.TrimPrefix(digest, "sha256:")
+		if len(hex) > 12 {
+			hex = hex[:12]
+		}
+		return filepath.Join(vexDir, "sha256-"+hex+".json")
+	}
+	// Fallback: timestamp-based name
+	return filepath.Join(vexDir, fmt.Sprintf("vex-%d.json", time.Now().Unix()))
 }
 
 // findLatestAttestation finds the most recent attestation file.
@@ -206,17 +225,27 @@ func runVEXGenerate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to generate VEX document: %w", err)
 	}
 
+	// Determine output path: explicit --output flag, or auto-generate under .provenix/vex/
+	outputPath := vexOutputFile
+	if outputPath == "" {
+		outputPath = resolveVexOutputPath(ev)
+	}
+
 	// Write VEX to file
 	vexData, err := json.MarshalIndent(vexDoc, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal VEX document: %w", err)
 	}
 
-	if err := os.WriteFile(vexOutputFile, vexData, 0644); err != nil {
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	if err := os.WriteFile(outputPath, vexData, 0644); err != nil {
 		return fmt.Errorf("failed to write VEX file: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "✅ VEX document written to: %s\n", vexOutputFile)
+	fmt.Fprintf(os.Stderr, "✅ VEX document written to: %s\n", outputPath)
 	fmt.Fprintf(os.Stderr, "   Format: %s\n", vexFormat)
 	fmt.Fprintf(os.Stderr, "   Vulnerabilities: %d\n", vulnCount)
 
