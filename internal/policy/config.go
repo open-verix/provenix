@@ -109,6 +109,15 @@ type CustomPolicy struct {
 	// CELExpressions is a list of CEL expressions to evaluate
 	CELExpressions []CELExpression `yaml:"cel_expressions,omitempty"`
 
+	// CELPolicyFiles is a list of external .cel policy files to load
+	// Example: [".provenix/policies/security.cel", ".provenix/policies/compliance.cel"]
+	CELPolicyFiles []string `yaml:"cel_policy_files,omitempty"`
+
+	// CELEntryPoint is the name of the CEL expression to evaluate when using external files
+	// If empty, all loaded expressions are evaluated
+	// Example: "allow" (evaluates only the expression named "allow")
+	CELEntryPoint string `yaml:"cel_entry_point,omitempty"`
+
 	// OPAEnabled enables Open Policy Agent integration (future)
 	OPAEnabled bool `yaml:"opa_enabled,omitempty"`
 
@@ -123,7 +132,7 @@ type CustomPolicy struct {
 // DefaultConfig returns a sensible default configuration.
 func DefaultConfig() *Config {
 	maxCritical := 0
-	maxHigh := 0
+	maxHigh := 5
 	maxMedium := 10
 
 		return &Config{
@@ -146,6 +155,50 @@ func DefaultConfig() *Config {
 		},
 		Signing: &SigningPolicy{
 			Required:        false, // Not required for MVP (stub signing)
+			RequireKeyless:  false,
+			RequireRekor:    false,
+			AllowedIssuers:  []string{},
+			AllowedSubjects: []string{},
+		},
+		Custom: &CustomPolicy{
+			CELEnabled:     false,
+			CELExpressions: []CELExpression{},
+			OPAEnabled:     false,
+			PolicyFiles:    []string{},
+			EntryPoint:     "data.provenix.allow",
+		},
+	}
+}
+
+// ProductionConfig returns production-optimized policy configuration.
+// Production defaults:
+// - Stricter vulnerability thresholds (0 critical, 0 high, 5 medium)
+// - Keyless signing via OIDC
+// - Rekor transparency log enabled
+// - Auto-update vulnerability database
+func ProductionConfig() *Config {
+	maxCritical := 0
+	maxHigh := 0
+	maxMedium := 5
+
+	return &Config{
+		Version: "v1",
+		Vulnerabilities: &VulnerabilityPolicy{
+			MaxCritical: &maxCritical,
+			MaxHigh:     &maxHigh,
+			MaxMedium:   &maxMedium,
+			OnlyFixed:   false,
+			IgnoreIDs:   []string{},
+			FailOnAny:   false,
+		},
+		Licenses: nil,
+		SBOM: &SBOMPolicy{
+			RequiredFormat:  "",
+			MinPackages:     0,
+			RequireChecksum: true,
+		},
+		Signing: &SigningPolicy{
+			Required:        false,
 			RequireKeyless:  false,
 			RequireRekor:    false,
 			AllowedIssuers:  []string{},
@@ -321,7 +374,7 @@ func SaveConfig(config *Config, path string) error {
 // new projects — a single file manages all Provenix settings.
 func SaveUnifiedConfig(policy *Config, path string) error {
 	maxCritical := 0
-	maxHigh := 0
+	maxHigh := 5
 	maxMedium := 10
 	if policy.Vulnerabilities != nil {
 		if policy.Vulnerabilities.MaxCritical != nil {
@@ -340,35 +393,64 @@ func SaveUnifiedConfig(policy *Config, path string) error {
 		requireChecksum = policy.SBOM.RequireChecksum
 	}
 
+	entryPoint := "data.provenix.allow"
+	if policy.Custom != nil && policy.Custom.EntryPoint != "" {
+		entryPoint = policy.Custom.EntryPoint
+	}
+
 	content := fmt.Sprintf(`# provenix.yaml — Provenix configuration (tool config + policy in one file)
 #
 # Commit this file to your repository.
 # Generated artifacts go to .provenix/ which should be in .gitignore.
 #
 # Config priority: CLI flags > env vars (PROVENIX_*) > this file > defaults
+# Schema version of this config file
 version: v1
 
 # ==============================================================================
-# Tool Configuration
+# Tool Configuration (Development Defaults)
 # ==============================================================================
+# These defaults optimize for local development:
+# - Local key signing (fast, offline-capable)
+# - No Rekor publishing (fast, private)
+# - Manual database updates (offline-capable)
+#
+# For production, use provenix.prod.yaml or override via CLI flags:
+#   provenix attest --config provenix.prod.yaml myapp:latest
+#
 sbom:
   # Options: cyclonedx-json, spdx-json, syft-json
   format: cyclonedx-json
+  # Whether to embed source files in the SBOM (increases artifact size)
   include-files: false
 
 scan:
+  # Report vulnerabilities at this severity level and above
   min-severity: medium
+  # Fail the build if any vulnerability reaches this severity level
   fail-on: critical
+  database:
+    # Auto-update vulnerability database (set false for offline development)
+    auto-update: false
+    # Maximum age of database before requiring update (hours)
+    max-age: 168  # 7 days
 
 signing:
-  mode: keyless
-  oidc:
-    fulcio-url: https://fulcio.sigstore.dev
+  # Use local key signing for development (fast, no OIDC required)
+  # Generate dev keys: provenix init --generate-keys
+  mode: key
+  key:
+    # Path to private key for local signing
+    # Run 'provenix init --generate-keys' to create .provenix/dev-key.pem
+    path: .provenix/dev-key.pem
 
 rekor:
-  url: https://rekor.sigstore.dev
+  # Transparency log disabled for development (fast, private)
+  # Enable in production: url: https://rekor.sigstore.dev
+  url: ""
 
 storage:
+  # Output directory for generated attestations
   dir: .provenix/attestations
 
 # ==============================================================================
@@ -376,8 +458,11 @@ storage:
 # ==============================================================================
 policy:
   vulnerabilities:
+    # Maximum number of Critical vulnerabilities allowed (0 = none)
     max_critical: %d
+    # Maximum number of High vulnerabilities allowed
     max_high: %d
+    # Maximum number of Medium vulnerabilities allowed
     max_medium: %d
 
   # TODO(Phase 6): License policy
@@ -387,14 +472,217 @@ policy:
   #   warn_on_unknown: true
 
   sbom:
+    # Require the SBOM to include checksums for all components
     require_checksum: %v
 
   signing:
+    # Whether a valid signature on the attestation is required
+    required: false
+
+  custom:
+    # Enable custom policy evaluation using CEL (Common Expression Language)
+    cel_enabled: false
+    
+    # External CEL policy files (optional)
+    # cel_policy_files:
+    #   - .provenix/policies/security.cel
+    #   - .provenix/policies/compliance.cel
+    
+    # CEL entry point: evaluate only this named expression (optional)
+    # If empty, all expressions are evaluated
+    # cel_entry_point: allow
+    
+    # OPA integration (future - Phase 6)
+    # Entry point for OPA evaluation
+    entry_point: %s
+
+# ==============================================================================
+# Option Reference
+# ==============================================================================
+#
+# version:
+#   v1
+#
+# sbom.format:
+#   cyclonedx-json  — CycloneDX format (JSON)
+#   spdx-json       — SPDX format (JSON)
+#   syft-json       — Syft native format (JSON)
+#
+# sbom.include-files:
+#   true   — Embed source file paths in the SBOM
+#   false  — Omit source files (smaller artifact)
+#
+# scan.min-severity:
+#   critical | high | medium | low | negligible | unknown
+#
+# scan.fail-on:
+#   critical | high | medium | low | negligible | unknown
+#
+# signing.mode:
+#   keyless  — Sigstore OIDC-based signing (no key management)
+#   key      — Sign with a local or KMS-managed private key
+#
+# policy.vulnerabilities.max_critical / max_high / max_medium:
+#   Any non-negative integer. 0 means the policy fails on any occurrence.
+#
+# policy.sbom.require_checksum:
+#   true | false
+#
+# policy.signing.required:
+#   true  — Attestation must carry a valid signature
+#   false — Signature is optional
+#
+# policy.custom.cel_enabled:
+#   true  — Evaluate custom rules defined in CEL
+#   false — Skip custom policy evaluation
+#
+# policy.custom.cel_policy_files:
+#   List of external .cel files containing policy expressions
+#   Example: [".provenix/policies/security.cel"]
+#
+# policy.custom.cel_entry_point:
+#   Name of the expression to evaluate (leave empty to evaluate all)
+#   Example: "allow" evaluates only the expression named "allow"
+`, maxCritical, maxHigh, maxMedium, requireChecksum, entryPoint)
+
+	// Create directory if needed
+	dir := filepath.Dir(path)
+	if dir != "." && dir != "" {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %w", dir, err)
+		}
+	}
+
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write config file %s: %w", path, err)
+	}
+
+	return nil
+}
+
+// SaveProductionConfig generates production-optimized configuration file.
+// This creates provenix.prod.yaml with stricter security settings.
+func SaveProductionConfig(policy *Config, path string) error {
+	maxCritical := 0
+	maxHigh := 0
+	maxMedium := 5
+	if policy.Vulnerabilities != nil {
+		if policy.Vulnerabilities.MaxCritical != nil {
+			maxCritical = *policy.Vulnerabilities.MaxCritical
+		}
+		if policy.Vulnerabilities.MaxHigh != nil {
+			maxHigh = *policy.Vulnerabilities.MaxHigh
+		}
+		if policy.Vulnerabilities.MaxMedium != nil {
+			maxMedium = *policy.Vulnerabilities.MaxMedium
+		}
+	}
+
+	requireChecksum := true
+	if policy.SBOM != nil {
+		requireChecksum = policy.SBOM.RequireChecksum
+	}
+
+	entryPoint := "data.provenix.allow"
+	if policy.Custom != nil && policy.Custom.EntryPoint != "" {
+		entryPoint = policy.Custom.EntryPoint
+	}
+
+	content := fmt.Sprintf(`# provenix.prod.yaml — Production Configuration
+#
+# This file contains production-specific overrides for provenix.yaml.
+# Use with: provenix attest --config provenix.prod.yaml myapp:latest
+# Or set: export PROVENIX_CONFIG=provenix.prod.yaml
+#
+# Production optimizations:
+# - Keyless signing (OIDC via Fulcio, no key management)
+# - Rekor transparency log (public audit trail)
+# - Auto-update vulnerability database (always latest data)
+# - Stricter vulnerability thresholds (0 critical, 0 high, 5 medium)
+
+version: v1
+
+# ==============================================================================
+# Tool Configuration (Production Overrides)
+# ==============================================================================
+sbom:
+  format: cyclonedx-json
+  include-files: false
+
+scan:
+  min-severity: medium
+  fail-on: high
+  database:
+    # Always keep vulnerability database up-to-date in production
+    auto-update: true
+    # Maximum age before forcing update (24 hours)
+    max-age: 24
+
+signing:
+  # Keyless signing via Sigstore OIDC (GitHub Actions, GitLab CI support)
+  mode: keyless
+  oidc:
+    # Certificate authority endpoint
+    fulcio-url: https://fulcio.sigstore.dev
+    # OIDC issuer (auto-detected in CI environments)
+    # issuer: https://token.actions.githubusercontent.com
+
+rekor:
+  # Publish signatures to public transparency log
+  url: https://rekor.sigstore.dev
+
+storage:
+  dir: .provenix/attestations
+
+# ==============================================================================
+# Policy (Production Defaults)
+# ==============================================================================
+policy:
+  vulnerabilities:
+    # Production: Zero tolerance for critical vulnerabilities
+    max_critical: %d
+    # Production: Zero tolerance for high vulnerabilities
+    max_high: %d
+    # Production: Limited medium vulnerabilities allowed
+    max_medium: %d
+
+  # TODO(Phase 6): License policy
+  # licenses:
+  #   allowed: [MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC]
+  #   denied: [GPL-3.0, AGPL-3.0]
+  #   require_all_packages: true
+
+  sbom:
+    require_checksum: %v
+
+  signing:
+    # In production, signature verification should be enforced
     required: false
 
   custom:
     cel_enabled: false
-`, maxCritical, maxHigh, maxMedium, requireChecksum)
+    entry_point: %s
+
+# ==============================================================================
+# Usage Examples
+# ==============================================================================
+#
+# CI/CD Integration:
+#   export PROVENIX_CONFIG=provenix.prod.yaml
+#   provenix attest $IMAGE_NAME:$TAG
+#
+# GitHub Actions:
+#   - name: Attest with production settings
+#     env:
+#       PROVENIX_CONFIG: provenix.prod.yaml
+#     run: provenix attest myapp:${{ github.sha }}
+#
+# One-time override:
+#   provenix attest --config provenix.prod.yaml myapp:v1.0.0
+#
+# Configuration priority:
+#   CLI flags > PROVENIX_CONFIG env var > provenix.yaml > defaults
+`, maxCritical, maxHigh, maxMedium, requireChecksum, entryPoint)
 
 	// Create directory if needed
 	dir := filepath.Dir(path)

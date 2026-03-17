@@ -260,12 +260,36 @@ func (e *Engine) evaluateCustomCEL(ctx context.Context, ev *evidence.Evidence) (
 		return violations, warnings, nil
 	}
 
-	if len(e.config.Custom.CELExpressions) == 0 {
-		return violations, warnings, fmt.Errorf("CEL enabled but no expressions specified")
+	// Collect all CEL expressions (inline + external files)
+	var allExpressions []CELExpression
+
+	// Add inline expressions
+	allExpressions = append(allExpressions, e.config.Custom.CELExpressions...)
+
+	// Load external policy files if specified
+	if len(e.config.Custom.CELPolicyFiles) > 0 {
+		externalExprs, err := LoadCELPolicyFiles(e.config.Custom.CELPolicyFiles)
+		if err != nil {
+			return violations, warnings, fmt.Errorf("failed to load CEL policy files: %w", err)
+		}
+		allExpressions = append(allExpressions, externalExprs...)
+	}
+
+	// Check if we have any expressions to evaluate
+	if len(allExpressions) == 0 {
+		return violations, warnings, fmt.Errorf("CEL enabled but no expressions specified (inline or external)")
+	}
+
+	// Filter by entry point if specified
+	if e.config.Custom.CELEntryPoint != "" {
+		allExpressions = FilterExpressionsByName(allExpressions, e.config.Custom.CELEntryPoint)
+		if len(allExpressions) == 0 {
+			return violations, warnings, fmt.Errorf("CEL entry point %q not found in loaded expressions", e.config.Custom.CELEntryPoint)
+		}
 	}
 
 	// Create CEL evaluator
-	evaluator, err := NewCELEvaluator(e.config.Custom.CELExpressions)
+	evaluator, err := NewCELEvaluator(allExpressions)
 	if err != nil {
 		return violations, warnings, fmt.Errorf("failed to create CEL evaluator: %w", err)
 	}
@@ -280,7 +304,7 @@ func (e *Engine) evaluateCustomCEL(ctx context.Context, ev *evidence.Evidence) (
 	}
 
 	// Check results and create violations for failed expressions
-	for _, expr := range e.config.Custom.CELExpressions {
+	for _, expr := range allExpressions {
 		passed, exists := results[expr.Name]
 		if !exists {
 			continue // Should not happen, but skip if missing
@@ -338,8 +362,19 @@ func evidenceToMap(ev *evidence.Evidence) map[string]interface{} {
 				"description":   v.Description,
 			})
 		}
-		result["vulnerabilities"] = vulns
-		result["vulnerability_count"] = len(vulns)
+		
+		// Add severity statistics for easy policy evaluation
+		stats := ev.VulnerabilityReport.Stats()
+		result["vulnerabilities"] = map[string]interface{}{
+			"critical":   int(stats[scanner.SeverityCritical]),
+			"high":       int(stats[scanner.SeverityHigh]),
+			"medium":     int(stats[scanner.SeverityMedium]),
+			"low":        int(stats[scanner.SeverityLow]),
+			"negligible": int(stats[scanner.SeverityNegligible]),
+			"unknown":    int(stats[scanner.SeverityUnknown]),
+			"total":      len(vulns),
+			"list":       vulns,
+		}
 	}
 
 	return result

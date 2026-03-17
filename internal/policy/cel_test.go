@@ -245,7 +245,7 @@ func TestEngine_Evaluate_CEL(t *testing.T) {
 					CELExpressions: []policy.CELExpression{
 						{
 							Name:    "no-critical",
-							Expr:    "input.vulnerabilities.filter(v, v.severity == 'Critical').size() == 0",
+							Expr:    "input.vulnerabilities.critical == 0",
 							Message: "Critical vulnerabilities found",
 						},
 					},
@@ -278,7 +278,7 @@ func TestEngine_Evaluate_CEL(t *testing.T) {
 					CELExpressions: []policy.CELExpression{
 						{
 							Name:    "no-critical",
-							Expr:    "input.vulnerabilities.filter(v, v.severity == 'Critical').size() == 0",
+							Expr:    "input.vulnerabilities.critical == 0",
 							Message: "Critical vulnerabilities found",
 						},
 					},
@@ -311,12 +311,12 @@ func TestEngine_Evaluate_CEL(t *testing.T) {
 					CELExpressions: []policy.CELExpression{
 						{
 							Name:    "no-critical",
-							Expr:    "input.vulnerabilities.filter(v, v.severity == 'Critical').size() == 0",
+							Expr:    "input.vulnerabilities.critical == 0",
 							Message: "Critical vulnerabilities found",
 						},
 						{
 							Name:    "max-5-high",
-							Expr:    "input.vulnerabilities.filter(v, v.severity == 'High').size() <= 5",
+							Expr:    "input.vulnerabilities.high <= 5",
 							Message: "Too many high vulnerabilities",
 						},
 					},
