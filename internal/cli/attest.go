@@ -11,16 +11,10 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	
-	"github.com/open-verix/provenix/internal/config"
+
 	"github.com/open-verix/provenix/internal/evidence"
-	"github.com/open-verix/provenix/internal/providers"
 	"github.com/open-verix/provenix/internal/providers/sbom"
-	sbommock "github.com/open-verix/provenix/internal/providers/sbom/mock"
 	"github.com/open-verix/provenix/internal/providers/scanner"
-	scannermock "github.com/open-verix/provenix/internal/providers/scanner/mock"
-	"github.com/open-verix/provenix/internal/providers/signer"
-	signermock "github.com/open-verix/provenix/internal/providers/signer/mock"
 )
 
 var attestCmd = &cobra.Command{
@@ -99,17 +93,10 @@ func runAttest(cmd *cobra.Command, args []string) error {
 	
 	fmt.Printf("🔍 Attesting artifact: %s\n", artifact)
 	
-	// Load configuration
-	var cfg *config.Config
-	var err error
-	
-	if configPath != "" {
-		cfg, err = config.Load(configPath)
-		if err != nil {
-			return fmt.Errorf("failed to load config: %w", err)
-		}
-	} else {
-		cfg = config.Default()
+	// Load configuration (with PROVENIX_CONFIG env var support)
+	cfg, err := loadConfig(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
 	}
 	
 	// Override config with CLI flags
@@ -143,61 +130,33 @@ func runAttest(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 	
-	// Get SBOM provider (Syft is registered in internal/providers/sbom/register.go)
-	sbomProvider, err := providers.GetSBOMProvider("syft")
-	if err != nil {
-		fmt.Println("⚠️  Syft provider not available, falling back to mock")
-		sbomProvider = sbommock.NewProvider()
-	}
-	
-	// Get scanner provider (Grype is registered in internal/providers/scanner/register.go)
-	scannerProvider, err := providers.GetScannerProvider("grype")
-	if err != nil {
-		fmt.Println("⚠️  Grype provider not available, falling back to mock")
-		scannerProvider = scannermock.NewProvider()
-	}
-	
-	// Get signer provider (Cosign is registered in internal/providers/signer/register.go)
-	signerProvider, err := providers.GetSignerProvider("cosign")
-	if err != nil {
-		fmt.Println("⚠️  Cosign provider not available, falling back to mock")
-		signerProvider = signermock.NewProvider()
-	}
-	
-	// Create evidence generator
-	gen := evidence.NewGenerator(sbomProvider, scannerProvider, signerProvider)
-	
-	// Prepare generation options
-	opts := evidence.GenerateOptions{
-		SBOMOptions: sbom.Options{
-			Format: sbom.Format(cfg.SBOM.Format),
-		},
-		ScanOptions: scanner.Options{
-			FailOnSeverity: scanner.Severity(cfg.Scan.FailOn),
-		},
-		SignOptions: signer.Options{
-			Mode:             signer.SigningMode(cfg.Signing.Mode),
-			KeyPath:          cfg.Signing.Key.Path,
-			FulcioURL:        cfg.Signing.OIDC.FulcioURL,
-			RekorURL:         cfg.Rekor.URL,
-			OIDCClientID:     "sigstore",
-			SkipTransparency: skipTransparency || cfg.Rekor.URL == "",
-		},
-		GeneratorVersion: Version,
-	}
-	
-	// Generate evidence (SBOM + Scan + Sign are atomic — no temporary files)
+	// Generate evidence via shared attestation core.
+	// Hard fail if any provider is not registered — no mock fallback.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	s := newSpinner("Generating SBOM...")
 	s.Start()
 
-	ev, err := gen.Generate(ctx, artifact, opts)
+	coreResult, err := GenerateAttestation(ctx, CoreAttestOptions{
+		Artifact: artifact,
+		Config: buildCoreConfig(
+			cfg.SBOM.Format,
+			cfg.Signing.Mode,
+			cfg.Signing.Key.Path,
+			cfg.Signing.OIDC.FulcioURL,
+			cfg.Rekor.URL,
+			cfg.Scan.FailOn,
+		),
+		SBOMFormat:       cfg.SBOM.Format,
+		SkipTransparency: skipTransparency || cfg.Rekor.URL == "",
+		GeneratorVersion: Version,
+	})
 	if err != nil {
 		s.Fail(fmt.Sprintf("❌ Evidence generation failed: %v", err))
 		return err
 	}
+	ev := coreResult.Evidence
 
 	s.Success(fmt.Sprintf("✅ SBOM       %s, %d packages", ev.SBOM.Format, extractPackageCount(ev.SBOM)))
 	fmt.Fprintf(os.Stderr, "✅ Vuln scan  %d vulnerabilities found\n", len(ev.VulnerabilityReport.Vulnerabilities))
@@ -230,7 +189,7 @@ func runAttest(cmd *cobra.Command, args []string) error {
 	// 2: Partial success (signed but Rekor unavailable)
 	// 1: Fatal error (handled by error return)
 	
-	shouldSkipTransparency := cfg.Rekor.URL == "" || opts.SignOptions.SkipTransparency
+	shouldSkipTransparency := cfg.Rekor.URL == "" || skipTransparency
 	
 	if shouldSkipTransparency {
 		fmt.Println("\n🌐 Transparency: skipped (air-gapped mode)")

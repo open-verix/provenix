@@ -12,7 +12,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	
+	"gopkg.in/yaml.v3"
+
 	"github.com/open-verix/provenix/internal/config"
 )
 
@@ -112,20 +113,13 @@ func runBatch(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	startTime := time.Now()
 
-	// Load configuration
+	// Load configuration (with PROVENIX_CONFIG env var support)
 	configPath, _ := cmd.Flags().GetString("config")
 	sbomFormat, _ := cmd.Flags().GetString("format")
 	
-	var cfg *config.Config
-	var err error
-	
-	if configPath != "" {
-		cfg, err = config.Load(configPath)
-		if err != nil {
-			return fmt.Errorf("failed to load config: %w", err)
-		}
-	} else {
-		cfg = config.Default()
+	cfg, err := loadConfig(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	// Parse input
@@ -281,35 +275,76 @@ func processArtifact(ctx context.Context, spec ArtifactSpec, cfg *config.Config,
 		outputPath = filepath.Join(batchOutputDir, filename)
 	}
 
-	// TODO: Call actual attestation logic
-	// For now, this is a stub that simulates attestation
-	// In real implementation, this would call the same logic as runAttest()
-	
-	// Simulate work (remove in actual implementation)
-	time.Sleep(100 * time.Millisecond)
-	
+	// Ensure output directory exists
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		result.Error = fmt.Sprintf("failed to create output directory: %v", err)
+		result.Duration = time.Since(startTime).Seconds()
+		return result
+	}
+
+	// Call shared attestation core (no mock fallback)
+	coreResult, err := GenerateAttestation(ctx, CoreAttestOptions{
+		Artifact: spec.Name,
+		Config: buildCoreConfig(
+			cfg.SBOM.Format,
+			cfg.Signing.Mode,
+			cfg.Signing.Key.Path,
+			cfg.Signing.OIDC.FulcioURL,
+			cfg.Rekor.URL,
+			cfg.Scan.FailOn,
+		),
+		SBOMFormat:       sbomFormat,
+		OutputPath:       outputPath,
+		SkipTransparency: cfg.Rekor.URL == "",
+		GeneratorVersion: Version,
+	})
+	if err != nil {
+		result.Error = err.Error()
+		result.Duration = time.Since(startTime).Seconds()
+		return result
+	}
+
 	result.Success = true
-	result.Output = outputPath
+	result.Output = coreResult.SavedPath
+	result.RekorUUID = coreResult.RekorUUID
 	result.Duration = time.Since(startTime).Seconds()
-	
+
 	return result
 }
 
 func loadBatchInput(path string) (BatchInput, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return BatchInput{}, err
+		return BatchInput{}, fmt.Errorf("failed to read input file: %w", err)
 	}
 
 	var input BatchInput
-	
-	// Try JSON first
-	if err := json.Unmarshal(data, &input); err == nil {
-		return input, nil
-	}
 
-	// TODO: Add YAML support
-	return BatchInput{}, fmt.Errorf("failed to parse input file (only JSON supported currently)")
+	// Detect format by file extension; fall back to content-based detection.
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".yaml", ".yml":
+		if err := yaml.Unmarshal(data, &input); err != nil {
+			return BatchInput{}, fmt.Errorf("failed to parse YAML input file: %w", err)
+		}
+		return input, nil
+
+	case ".json":
+		if err := json.Unmarshal(data, &input); err != nil {
+			return BatchInput{}, fmt.Errorf("failed to parse JSON input file: %w", err)
+		}
+		return input, nil
+
+	default:
+		// Unknown extension: try YAML first, then JSON.
+		if err := yaml.Unmarshal(data, &input); err == nil && len(input.Artifacts) > 0 {
+			return input, nil
+		}
+		if err := json.Unmarshal(data, &input); err == nil {
+			return input, nil
+		}
+		return BatchInput{}, fmt.Errorf("failed to parse input file %q (supported formats: .json, .yaml, .yml)", path)
+	}
 }
 
 func loadBatchInputFromStdin() (BatchInput, error) {
