@@ -97,6 +97,7 @@ func init() {
 	rootCmd.AddCommand(historyCmd)
 	rootCmd.AddCommand(batchCmd)
 	rootCmd.AddCommand(proveCmd)
+	rootCmd.AddCommand(dbCmd)
 }
 
 var versionCmd = &cobra.Command{
