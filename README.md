@@ -190,13 +190,122 @@ Provenix follows a **Progressive Configuration** model:
 
 Configuration is discovered within your project directory only (never searches `~/.provenix/` or `/etc/provenix/`).
 
-**Optional setup helper:**
+**Project Initialization:**
 
 ```bash
-provenix init  # Generates template config
+provenix init  # Generates provenix.yaml + provenix.prod.yaml + .provenix/ structure
+```
+
+This creates:
+
+- `provenix.yaml` - Development defaults (fast, offline, private)
+- `provenix.prod.yaml` - Production defaults (keyless, Rekor, strict)
+- `.provenix/` - Directory for generated artifacts
+
+**Switching Configurations:**
+
+```bash
+# Use development config (default)
+provenix attest myapp:latest
+
+# Use production config via environment variable
+export PROVENIX_CONFIG=provenix.prod.yaml
+provenix attest myapp:latest
+
+# Or via CLI flag
+provenix attest myapp:latest --config provenix.prod.yaml
 ```
 
 For detailed configuration options, see `docs/configuration.md`.
+
+⸻
+
+Environment-Specific Configuration
+
+Provenix provides separate defaults for development and production environments:
+
+**Development (Default)**
+
+Fast, offline-capable, private:
+
+- Local key signing (~7 seconds per attestation)
+- No Rekor publishing (private development)
+- Manual vulnerability database updates
+- Looser vulnerability thresholds
+
+```bash
+# Initialize project with dev keys
+provenix init --generate-keys
+
+# Attest with development defaults (uses provenix.yaml)
+provenix attest myapp:latest
+```
+
+**Production**
+
+Strict, transparent, publicly auditable:
+
+- Keyless signing via OIDC (~40 seconds per attestation)
+- Rekor transparency log publishing
+- Auto-updating vulnerability database
+- Strict vulnerability thresholds
+
+```bash
+# Attest with production config
+provenix attest myapp:v1.0.0 --config provenix.prod.yaml
+
+# Or set via environment variable
+export PROVENIX_CONFIG=provenix.prod.yaml
+provenix attest myapp:v1.0.0
+```
+
+**Rationale:**
+
+Development speed matters. Waiting 40 seconds per attestation (OIDC + Rekor) is unacceptable for iterative development. Publishing every dev build to a permanent public log raises privacy concerns.
+
+Production transparency matters. Keyless signing and public transparency logs provide cryptographic proof of authenticity for released artifacts.
+
+For team recommendations, see `provenix.prod.yaml` for production overrides.
+
+⸻
+
+## Batch Processing
+
+Provenix supports batch attestation for processing multiple artifacts efficiently with parallel processing.
+
+```bash
+# Attest multiple artifacts
+provenix batch nginx:latest alpine:latest myapp:v1.0.0 --parallel 4
+
+# From input file (JSON or YAML)
+provenix batch --input artifacts.yaml
+```
+
+For detailed usage, examples, and CI/CD integration, see [`explains/batch-usage-guide-for-provenix-examples.md`](explains/batch-usage-guide-for-provenix-examples.md).
+
+⸻
+
+## Database Management
+
+**Vulnerability Database Commands**
+
+Provenix provides commands to manage the Grype vulnerability database:
+
+```bash
+# View database status
+provenix db status
+
+# Force database update
+provenix db update
+
+# Clean old database versions
+provenix db clean
+```
+
+The database is stored at `~/.cache/grype/db` and auto-updates based on `provenix.yaml` settings:
+
+- Development: Manual updates (offline-capable)
+- Production: Auto-update (max age: 24 hours)
 
 ⸻
 
@@ -246,13 +355,11 @@ Failure Model (Atomic by Design)
 Provenix classifies failures into three categories:
 
 1. Cryptographic Failure → Exit 1 (hard stop)
-
    - Signature verification failed
    - Hash mismatch between components
    - Attestation integrity violated
 
 2. Evidence Gap → Exit 2 (recorded, continue)
-
    - Vulnerabilities detected (observe mode)
    - Unsigned commits, dirty working tree
    - Missing optional checks

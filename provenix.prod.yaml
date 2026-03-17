@@ -1,0 +1,91 @@
+# provenix.prod.yaml — Production Configuration
+#
+# This file contains production-specific overrides for provenix.yaml.
+# Use with: provenix attest --config provenix.prod.yaml myapp:latest
+#
+# Production optimizations:
+# - Keyless signing (OIDC via Fulcio, no key management)
+# - Rekor transparency log (public audit trail)
+# - Auto-update vulnerability database (always latest data)
+# - Stricter vulnerability thresholds
+
+version: v1
+
+# ==============================================================================
+# Tool Configuration (Production Overrides)
+# ==============================================================================
+sbom:
+  format: cyclonedx-json
+  include-files: false
+
+scan:
+  min-severity: medium
+  fail-on: high
+  database:
+    # Always keep vulnerability database up-to-date in production
+    auto-update: true
+    # Maximum age before forcing update (24 hours)
+    max-age: 24
+
+signing:
+  # Keyless signing via Sigstore OIDC (GitHub Actions, GitLab CI support)
+  mode: keyless
+  oidc:
+    # Certificate authority endpoint
+    fulcio-url: https://fulcio.sigstore.dev
+    # OIDC issuer (auto-detected in CI environments)
+    # issuer: https://token.actions.githubusercontent.com
+
+rekor:
+  # Publish signatures to public transparency log
+  url: https://rekor.sigstore.dev
+
+storage:
+  dir: .provenix/attestations
+
+# ==============================================================================
+# Policy (Production Defaults)
+# ==============================================================================
+policy:
+  vulnerabilities:
+    # Strict thresholds for production
+    max_critical: 0
+    max_high: 0
+    max_medium: 5
+
+  sbom:
+    require_checksum: true
+
+  signing:
+    # Require valid signatures in production
+    required: true
+
+  custom:
+    cel_enabled: false
+    entry_point: data.provenix.allow
+
+# ==============================================================================
+# Environment-Specific Usage Examples
+# ==============================================================================
+#
+# Development (local, fast, private):
+#   provenix attest myapp:latest
+#   → Uses provenix.yaml defaults (local key, no Rekor)
+#   → ~7 seconds per attestation
+#
+# Staging (testing keyless flow):
+#   export PROVENIX_SIGNING_MODE=keyless
+#   provenix attest myapp:staging --config provenix.prod.yaml
+#   → Uses keyless + Rekor
+#   → ~40 seconds per attestation
+#
+# Production (CI/CD, strict, transparent):
+#   provenix attest myapp:v1.0.0 --config provenix.prod.yaml
+#   → Uses keyless + Rekor + strict policy
+#   → Public transparency log entry
+#
+# Air-gapped production (no Rekor):
+#   provenix attest myapp:v1.0.0 --config provenix.prod.yaml --skip-transparency
+#   → Uses keyless + local key fallback
+#   → Attestation saved locally
+#   → Exit code 2 (partial success)

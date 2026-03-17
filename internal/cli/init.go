@@ -22,34 +22,51 @@ import (
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Initialize Provenix (create provenix.yaml, download vulnerability database)",
+	Short: "Initialize Provenix (create config files, download vulnerability database)",
 	Long: `Initialize Provenix for the current project.
 
 This command should be run once in each project directory before using
 attestation or scanning features. It performs the following steps:
 
-  1. Create provenix.yaml with default tool config and policy settings
+  1. Create provenix.yaml with development-optimized defaults
+     - Local key signing (fast, offline-capable)
+     - No Rekor publishing (fast, private)
+     - Manual database updates (offline-capable)
      (skipped if the file already exists — use --force to regenerate)
-  2. Create the .provenix/ working directory
-  3. Download the Grype vulnerability database (~200MB, first run only)
+  
+  2. Create provenix.prod.yaml with production-optimized defaults
+     - Keyless signing via OIDC (no key management)
+     - Rekor transparency log (public audit trail)  
+     - Auto-update vulnerability database
+     - Stricter vulnerability thresholds (0 critical, 0 high, 5 medium)
+     (skipped if the file already exists — use --force to regenerate)
+  
+  3. Create the .provenix/ working directory
+  
+  4. Download the Grype vulnerability database (~200MB, first run only)
      stored in ~/.cache/grype/db/
-  4. Optionally generate a development key pair (--generate-key)
+  
+  5. Optionally generate a development key pair (--generate-key)
 
-The generated provenix.yaml contains both tool configuration (sbom, scan,
-signing, rekor) and the policy: section in one unified file.`,
+Use provenix.yaml for local development and provenix.prod.yaml for CI/CD.`,
 	Example: `  # Standard first-time setup
   provenix init
 
-  # Regenerate provenix.yaml (overwrite existing)
+  # Regenerate both config files (overwrite existing)
   provenix init --force
 
   # Also generate development keys for local signing
   provenix init --generate-key
 
-  # The following commands are then available:
+  # Development usage (default)
   provenix attest alpine:latest
-  provenix scan alpine:latest
-  provenix report dependencies alpine:latest`,
+
+  # Production usage (via environment variable)
+  export PROVENIX_CONFIG=provenix.prod.yaml
+  provenix attest alpine:latest
+
+  # Production usage (via CLI flag)
+  provenix attest --config provenix.prod.yaml alpine:latest`,
 	RunE: runInit,
 }
 
@@ -82,7 +99,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if err := policy.SaveUnifiedConfig(policy.DefaultConfig(), configFile); err != nil {
 			return fmt.Errorf("failed to create %s: %w", configFile, err)
 		}
-		fmt.Fprintf(os.Stderr, "✅ Created %s (tool config + policy)\n", configFile)
+		fmt.Fprintf(os.Stderr, "✅ Created %s (development config)\n", configFile)
 	case initForce: // file exists but --force given
 		if err := policy.SaveUnifiedConfig(policy.DefaultConfig(), configFile); err != nil {
 			return fmt.Errorf("failed to overwrite %s: %w", configFile, err)
@@ -90,6 +107,24 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "✅ Regenerated %s (overwritten)\n", configFile)
 	default: // file exists, no --force
 		fmt.Fprintf(os.Stderr, "ℹ️  %s already exists, skipping\n", configFile)
+	}
+
+	// Step 1b: Generate provenix.prod.yaml
+	const prodConfigFile = "provenix.prod.yaml"
+	_, prodStatErr := os.Stat(prodConfigFile)
+	switch {
+	case prodStatErr != nil: // file does not exist
+		if err := policy.SaveProductionConfig(policy.ProductionConfig(), prodConfigFile); err != nil {
+			return fmt.Errorf("failed to create %s: %w", prodConfigFile, err)
+		}
+		fmt.Fprintf(os.Stderr, "✅ Created %s (production config)\n", prodConfigFile)
+	case initForce: // file exists but --force given
+		if err := policy.SaveProductionConfig(policy.ProductionConfig(), prodConfigFile); err != nil {
+			return fmt.Errorf("failed to overwrite %s: %w", prodConfigFile, err)
+		}
+		fmt.Fprintf(os.Stderr, "✅ Regenerated %s (overwritten)\n", prodConfigFile)
+	default: // file exists, no --force
+		fmt.Fprintf(os.Stderr, "ℹ️  %s already exists, skipping\n", prodConfigFile)
 		fmt.Fprintf(os.Stderr, "   To regenerate: provenix init --force\n")
 	}
 
@@ -131,12 +166,20 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	s.Success("✅ Vulnerability database ready")
 	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "You can now use:")
+	fmt.Fprintln(os.Stderr, "✅ Initialization complete!")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "Development usage (local, fast):")
 	if initGenerateKey {
 		fmt.Fprintf(os.Stderr, "  provenix attest <artifact> --key %s.key\n", initKeyOutput)
 	} else {
 		fmt.Fprintln(os.Stderr, "  provenix attest <artifact>")
 	}
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "Production usage (CI/CD, keyless):")
+	fmt.Fprintln(os.Stderr, "  export PROVENIX_CONFIG=provenix.prod.yaml")
+	fmt.Fprintln(os.Stderr, "  provenix attest <artifact>")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "Other commands:")
 	fmt.Fprintln(os.Stderr, "  provenix scan <artifact>")
 	fmt.Fprintln(os.Stderr, "  provenix report dependencies <artifact>")
 
